@@ -1,0 +1,12 @@
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.iml
+out/
+.kotlin/
+
+# Сырые выгрузки из закрытого DataGrip (javap, индекс классов) — генерируются локально scripts/research.*
+docs/research/*
+!docs/research/README.md
+.intellijPlatform/

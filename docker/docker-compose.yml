@@ -1,0 +1,20 @@
+# Тестовая PostgreSQL для OpenData IDE.
+#   docker compose -f docker/docker-compose.yml up -d
+# JDBC: jdbc:postgresql://localhost:54329/opendata  user/password: opendata/opendata
+services:
+  postgres:
+    image: postgres:16
+    container_name: opendata-postgres
+    environment:
+      POSTGRES_DB: opendata
+      POSTGRES_USER: opendata
+      POSTGRES_PASSWORD: opendata
+    ports:
+      - "54329:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendata -d opendata"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
