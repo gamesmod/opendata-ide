@@ -1,5 +1,5 @@
 # Сборка и тесты OpenData IDE на реальном DataGrip + PostgreSQL 16.
-# На тег v* дополнительно публикуется GitHub Release с плагином.
+# После зелёной сборки main публикуется GitHub Release v<version> (если его ещё нет).
 name: build
 
 on:
@@ -83,9 +83,16 @@ jobs:
           path: opendata/integration/build/distributions/*.zip
 
       - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Релиз v<version из gradle.properties> создаётся один раз: после зелёной сборки main (или по тегу v*).
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" opendata/integration/build/distributions/*.zip \
-            --title "OpenData IDE $GITHUB_REF_NAME" --notes-file docs/release-notes.md
+          VERSION=$(sed -n 's/^version=//p' gradle.properties)
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skip"
+            exit 0
+          fi
+          gh release create "$TAG" opendata/integration/build/distributions/*.zip \
+            --target "$GITHUB_SHA" --title "OpenData IDE $TAG" --notes-file docs/release-notes.md

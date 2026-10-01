@@ -87,3 +87,16 @@ IDE новее (2025.3 / 2026.x), а сборка падает на этапе �
 `intellijPlatformPluginVersion` до актуальной 2.x и `kotlinVersion` до версии Kotlin stdlib вашей IDE
 (её показывает `docs/compatibility-matrix.md`). После успешной сборки поменяйте статус строки
 в матрице на `build OK`.
+
+## CI и релизы
+
+GitHub Actions (`.github/workflows/build.yml`) на каждый push и pull request:
+
+1. скачивает DataGrip (`DATAGRIP_VERSION`) и кэширует его;
+2. поднимает PostgreSQL 16 и выполняет `docker/postgres/init/01-opendata.sql`;
+3. запускает research и проверку совместимости, затем `buildPlugin` и `test`;
+4. публикует артефакты: ZIP плагина и результаты тестов.
+
+**Релиз.** Поднимите `version` в `gradle.properties` и запушьте в `main`. После зелёной сборки workflow сам создаст
+тег `v<version>` и GitHub Release с `opendata-integration-<version>.zip` и описанием из `docs/release-notes.md`.
+
