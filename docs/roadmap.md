@@ -11,7 +11,7 @@
 | R-2 | POC-плагин к DataGrip: Data Source, Test Connection, introspection, commit/rollback через штатный API (16/16 тестов) | 0.1.0 |
 | R-3 | Переход на самостоятельный продукт на открытой платформе: сборка продукта, брендинг, облегчённый состав плагинов | 0.2.0 |
 | R-4 | DB-слой на JDBC + открытый DataGrid: источники данных, драйверы, Explorer, консоль, completion, ошибки, отмена, транзакции, история, редактор таблицы, DDL | 0.2.0 |
-| R-5 | ClickHouse, Apache Cloudberry (режим PG), Dremio (Arrow Flight SQL); стенд docker, 23 теста, smoke IDE | 0.2.0 |
+| R-5 | ClickHouse, Apache Cloudberry (режим PG), Dremio (Arrow Flight SQL); стенд docker, 25 тестов, smoke IDE | 0.2.0 |
 | R-6 | CI: Linux (тесты на трёх СУБД, smoke под Xvfb, tar.gz), Windows (ZIP, проверка запуска), автоматический релиз | 0.2.0 |
 
 ## Дальше

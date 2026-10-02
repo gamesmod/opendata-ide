@@ -34,9 +34,9 @@ DataGrip и закрытый плагин Database Tools and SQL больше н
 - `opendata-db-0.2.0.zip` — DB-плагин для разработчиков (ставится в открытую IntelliJ Platform 2026.2).
 
 ### Проверено
-- 23 теста на PostgreSQL 16, в режиме Cloudberry, на ClickHouse и Dremio OSS 26.
+- 25 тестов на PostgreSQL 16, в режиме Cloudberry, на ClickHouse и Dremio OSS 26, включая загрузку драйверов из Maven Central.
 - Самопроверка собранной IDE под Xvfb: Explorer → консоль → DataGrid → редактор таблицы, для всех четырёх СУБД.
-- Windows: сборка ZIP и запуск IDE в CI. Ручная приёмка на Windows 11 ещё не проводилась.
+- Windows: сборка ZIP и запуск IDE в CI (`RESULT=OK`). Ручная приёмка на Windows 11 ещё не проводилась.
 
 ### Ограничения
 - Cloudberry проверен только в режиме совместимости на PostgreSQL.

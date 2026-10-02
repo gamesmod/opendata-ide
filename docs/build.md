@@ -85,7 +85,7 @@
 | Kotlin | 2.4.20 |
 | Gradle | 9.8.0 |
 | JDK сборки | 21 |
-| Результат | тесты 23/23 (PostgreSQL 16, режим Cloudberry, ClickHouse 26.10, Dremio OSS 26.0.5); smoke Linux-продукта OK для всех четырёх СУБД |
+| Результат | тесты 25/25 (PostgreSQL 16, режим Cloudberry, ClickHouse 26.10, Dremio OSS 26.0.5); smoke Linux-продукта OK для всех четырёх СУБД |
 
 ### Известные особенности
 

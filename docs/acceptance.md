@@ -8,9 +8,9 @@
 
 Результаты 2026-10-02 (Linux, платформа IC-262.10968.63):
 
-- тесты: 23/23 на PostgreSQL 16, в режиме Cloudberry, на ClickHouse 26.10 и Dremio OSS 26.0.5;
-- smoke Linux-продукта: `SMOKE=OK` для PostgreSQL, Cloudberry (режим PG), ClickHouse и Dremio;
-- Windows: ZIP собирается, запуск проверяет CI (`run.ps1 -Check`), smoke на Windows с СУБД не выполнялся.
+- тесты: 25/25 на PostgreSQL 16, в режиме Cloudberry, на ClickHouse 26.10 и Dremio OSS 26.0.5, включая загрузку драйверов из Maven Central (в CI);
+- smoke Linux-продукта: `SMOKE=OK` для PostgreSQL, Cloudberry (режим PG), ClickHouse и Dremio (в CI — PG, ClickHouse, Dremio с загрузкой драйверов);
+- Windows: ZIP собирается, IDE запускается в CI (`run.ps1 -Check` → `RESULT=OK`); smoke с СУБД на Windows не выполнялся.
 
 Стенд: `docker compose -f docker/docker-compose.yml up -d --wait`, затем `docker/dremio/init.sh`.
 

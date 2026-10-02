@@ -19,7 +19,7 @@ JDBC-драйверы зафиксированы в `DbKind.kt`. Раздел в
 
 | OpenData | Платформа (open source) | Build | JBR | JDK сборки | Kotlin | IPGP | Gradle | Статус |
 |---|---|---|---|---|---|---|---|---|
-| 0.2.0 | IntelliJ IDEA 2026.2.3 | IC-262.10968.63 | 25.0.4 | 21 | 2.4.20 | 2.19.0 | 9.8.0 | build OK · тесты 23/23 · smoke Linux OK (PG, CB, CH, Dremio) · Windows: ZIP + проверка запуска в CI |
+| 0.2.0 | IntelliJ IDEA 2026.2.3 | IC-262.10968.63 | 25.0.4 | 21 | 2.4.20 | 2.19.0 | 9.8.0 | build OK · тесты 25/25 · smoke Linux OK (PG, CB, CH, Dremio) · Windows: ZIP + запуск IDE в CI (RESULT=OK) |
 
 | СУБД | Драйвер | Проверено на сервере |
 |---|---|---|
