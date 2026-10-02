@@ -1,42 +1,30 @@
 # Этап 5 — продукт OpenData IDE
 
-> По ТЗ (раздел 41) к этому этапу переходим только после успешного POC (этапы 1–4) и юридической
-> проверки (roadmap, R-6). Код этапа не пишется до тех пор, пока research не подтвердит реальные API
-> product configuration в выбранной версии intellij-community (ТЗ, раздел 38).
+С версии 0.2.0 продукт собирается так: берётся открытая сборка IntelliJ IDEA (Apache 2.0) и перерабатывается
+инструментом [`tools/product/AssembleProduct.java`](../../tools/product/AssembleProduct.java). Форка
+`intellij-community` и сборки платформы из исходников нет.
 
-## Вариант A — дистрибутив поверх установленной IDE (3–5 чд)
-
-OpenData IDE поставляется как набор:
-
-- установленный DataGrip или IntelliJ IDEA (Database Tools уже входит в него, лицензия JetBrains не нарушается);
-- плагин(ы) OpenData (`opendata/integration` и далее);
-- отдельный launcher (`OpenData.cmd` / ярлык) со своими каталогами `idea.config.path` и `idea.system.path`
-  через `IDEA_PROPERTIES` / `DATAGRIP_PROPERTIES`, предустановленными настройками и Data Source-шаблонами,
-  а также набором включённых и отключённых плагинов (`disabled_plugins.txt`).
-
-Плюсы: минимум кода и рисков, обновления IDE штатные. Минусы: About, splash, иконка и product code
-остаются от JetBrains.
-
-## Вариант B — собственный product configuration (15–25 чд)
-
-Сборка продукта из intellij-community: собственный `ProductProperties`, ApplicationInfo
-(имя, product code, иконки, splash, About), layout bundled-плагинов и Windows launcher.
-Database Tools and SQL входит в продукт бинарно из локальной установки (ТЗ 8.2).
-
-Что нужно подтвердить research'ем до начала работ:
-
-1. реальные классы и точки расширения build-скриптов (`platform/build-scripts`) в выбранном теге intellij-community;
-2. совместимость бинарного плагина `com.intellij.database` с платформой, собранной из исходников той же build-линии;
-3. проверку лицензии и product code плагином: может ли он работать в продукте не от JetBrains (риск R1).
-
-Если пункт 3 даёт отрицательный ответ, остаётся вариант A.
+```bash
+./gradlew -PossIdePath=<распакованная открытая сборка> -PproductOs=linux|windows assembleProduct
+# или целиком: scripts/build.ps1 / scripts/build.sh
+```
 
 ## Требования ТЗ (раздел 10) и где они выполняются
 
-| Требование | Вариант A | Вариант B |
-|---|---|---|
-| product name, product code | — (от базовой IDE) | ApplicationInfo |
-| launcher, icon | ярлык/скрипт OpenData | собственный launcher |
-| splash, About | — | ApplicationInfo |
-| default и bundled plugins | `disabled_plugins.txt` + плагины OpenData | layout продукта |
-| VM options, system и config paths | `*.vmoptions` + `idea.properties` OpenData | product properties |
+| Требование | Реализация |
+|---|---|
+| product name, product code | `idea/IdeaApplicationInfo.xml` в `lib/opendata-branding.jar`: «OpenData IDE», `OD-<build>`; `product-info.json` |
+| launcher | `bin/opendata` (Linux), `bin\opendata64.exe` (Windows); `envVarBaseName=OPENDATA` (`OPENDATA_VM_OPTIONS`, `OPENDATA_JDK`) |
+| icon, splash, About | значок и splash генерируются в `opendata-branding.jar`, About показывает OpenData IDE |
+| default и bundled plugins | `plugins/`: `grid-core-plugin`, `platform-structureView-plugin`, `opendata-db`; essential: `io.opendata.db`, `intellij.grid.core.plugin` |
+| VM options | `bin/opendata64.exe.vmoptions` / `bin/opendata64.vmoptions` + `additionalJvmArguments` в `product-info.json` |
+| system и config paths | `-Didea.paths.selector=OpenData2026.2`: `%APPDATA%\OpenData\OpenData2026.2`, `~/.config/OpenData/OpenData2026.2` и т. п. |
+
+Подробности — в [`docs/architecture.md`](../../docs/architecture.md#продукт).
+
+## Почему не вариант с Database Tools
+
+В 0.1.0 рассматривались два варианта: «дистрибутив поверх DataGrip» и «свой product configuration с бинарным
+Database Tools». Второй невозможен: закрытый плагин требует модуль `com.intellij.modules.database-capable`,
+его объявляют только продукты JetBrains, а лицензия не разрешает распространять плагин в составе стороннего продукта.
+Поэтому DB-функциональность реализована в `opendata-db` поверх JDBC и открытого `intellij.grid`.

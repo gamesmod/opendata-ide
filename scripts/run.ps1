@@ -1,47 +1,51 @@
 ﻿<#
 .SYNOPSIS
-  Запуск IDE-песочницы с Database Tools и плагином OpenData (POC, ТЗ раздел 31).
-.PARAMETER Poc
-  Открыть служебный проект build/poc/project и после закрытия IDE вывести отчёт
-  диагностики (Database Tools loaded / Database Tool Window visible / PostgreSQL dialect).
+  Запуск собранной OpenData IDE (build\product\windows\OpenData-IDE).
+.PARAMETER Check
+  Только проверка запуска: IDE стартует, загружает плагины и пишет отчёт (RESULT=OK) — без подключения к СУБД.
+.PARAMETER Smoke
+  Самопроверка: id источника данных из настроек IDE. IDE раскроет его в Database Explorer, выполнит запрос
+  из консоли (результат в DataGrid), откроет таблицу -Table и запишет отчёт в build\poc\diagnostics.txt.
 .EXAMPLE
-  .\scripts\run.ps1 -Poc
+  .\scripts\run.ps1
+  .\scripts\run.ps1 -Check
+  .\scripts\run.ps1 -Smoke pg-local -Table public.opendata_test
+  .\scripts\run.ps1 -Smoke ch-local -Table opendata.events -Sql 'SELECT number AS id FROM numbers(100)'
 #>
 param(
-    [string]$IdeHome,
-    [switch]$Poc
+    [switch]$Check,
+    [string]$Smoke,
+    [string]$Table,
+    [string]$Sql
 )
 . "$PSScriptRoot\common.ps1"
 
-$java = Assert-Jdk
-$ide = Find-JetBrainsIde $IdeHome
-$null = Invoke-Research -Java $java -IdeHome $ide -CheckOnly
-$null = Assert-Compatibility $ide
+$ide = Get-ProductDir 'windows'
+$exe = Join-Path $ide 'bin\opendata64.exe'
+if (-not (Test-Path $exe)) { Fail "IDE не собрана: запустите .\scripts\build.ps1" }
 
-$gradleArgs = @("-PlocalIdePath=$ide", '--console=plain')
-$jbr = Get-IdeJbrJava $ide
-if ($jbr) { $gradleArgs += "-Porg.gradle.java.installations.paths=$(Split-Path (Split-Path $jbr -Parent) -Parent)" }
-
-$report = Join-Path $script:ProjectRoot 'build/poc/diagnostics.txt'
-if ($Poc) {
-    $project = Join-Path $script:ProjectRoot 'build/poc/project'
-    New-Item -ItemType Directory -Force $project | Out-Null
-    Copy-Item (Join-Path $script:ProjectRoot 'docs/poc/*.sql') $project -Force -ErrorAction SilentlyContinue
-    Remove-Item $report -ErrorAction SilentlyContinue
-    $gradleArgs += "-PopenProject=$project"
-    Write-Host 'POC: IDE откроет build/poc/project. Пройдите чек-лист docs/acceptance.md (этап 1), затем закройте IDE.' -ForegroundColor Cyan
+if (-not $Smoke -and -not $Check) {
+    Start-Process -FilePath $exe
+    Write-Host "Запущена OpenData IDE: $exe"
+    return
 }
-$gradleArgs += ':opendata:integration:runIde'
-Invoke-Gradle $gradleArgs
 
-if ($Poc) {
-    Write-Step 'POC diagnostics'
-    if (Test-Path $report) {
-        $text = Get-Content $report -Raw
-        Write-Host $text
-        if ($text -match 'RESULT: OK') { Write-Host 'POC (автоматическая часть): OK' -ForegroundColor Green }
-        else { Fail 'POC: диагностика не пройдена — см. отчёт выше' }
-    } else {
-        Fail "Отчёт $report не создан: проект не был открыт или плагин OpenData не загрузился (см. idea.log в build/idea-sandbox)"
-    }
-}
+$report = Join-Path $script:ProjectRoot 'build\poc\diagnostics.txt'
+New-Item -ItemType Directory -Force (Split-Path $report) | Out-Null
+Remove-Item $report -ErrorAction SilentlyContinue
+$vmFile = Join-Path $script:ProjectRoot 'build\poc\smoke.vmoptions'
+$lines = @("-Dopendata.diagnostics.file=$report")
+if ($Smoke) { $lines += "-Dopendata.smoke=$Smoke" }
+if ($Table) { $lines += "-Dopendata.smoke.table=$Table" }
+if ($Sql) { $lines += "-Dopendata.smoke.sql=$Sql" }
+Set-Content -Path $vmFile -Value $lines -Encoding ASCII
+$env:OPENDATA_VM_OPTIONS = $vmFile
+$proc = Start-Process -FilePath $exe -PassThru
+Write-Host "Самопроверка запущена (PID $($proc.Id)), ожидание отчёта…"
+for ($i = 0; $i -lt 120 -and -not (Test-Path $report); $i++) { Start-Sleep -Seconds 2 }
+if (-not (Test-Path $report)) { Fail "Отчёт не создан за 4 минуты: см. журнал IDE (Help → Show Log)" }
+Start-Sleep -Seconds 2
+Get-Content $report | Out-Host
+Stop-Process -Id $proc.Id -ErrorAction SilentlyContinue
+$marker = if ($Smoke) { 'SMOKE=OK' } else { 'RESULT=OK' }
+if ((Get-Content $report -Raw) -match $marker) { Write-Host "$marker" -ForegroundColor Green } else { Fail 'Самопроверка не пройдена' }

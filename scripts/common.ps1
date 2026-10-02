@@ -203,3 +203,39 @@ function Assert-Compatibility([string]$IdeHome) {
     }
     return $props
 }
+
+# ------------------------------------------------------------------------------------------
+# Открытая платформа (база продукта OpenData IDE)
+# ------------------------------------------------------------------------------------------
+
+# Возвращает каталог распакованной открытой сборки IntelliJ (Apache 2.0) для ОС, скачивая её при необходимости
+# из github.com/JetBrains/intellij-community/releases в build/platform/<версия>/<ос>.
+function Get-OssPlatform([string]$Os = 'windows', [string]$Explicit) {
+    if ($Explicit) {
+        if (-not (Test-Path (Join-Path $Explicit 'product-info.json'))) { Fail "Каталог '$Explicit' не похож на открытую сборку IntelliJ" }
+        return (Resolve-Path $Explicit).Path
+    }
+    $ver = Get-GradleProperty 'ossPlatformVersion'
+    $dir = Join-Path $script:ProjectRoot "build/platform/$ver/$Os"
+    if (Test-Path (Join-Path $dir 'product-info.json')) { return $dir }
+    $asset = switch ($Os) { 'windows' { "idea-$ver.win.zip" } 'linux' { "idea-$ver.tar.gz" } default { Fail "ОС $Os не поддерживается" } }
+    $url = "https://github.com/JetBrains/intellij-community/releases/download/idea%2F$ver/$asset"
+    $archive = Join-Path $script:ProjectRoot "build/platform/$asset"
+    New-Item -ItemType Directory -Force (Split-Path $archive) | Out-Null
+    if (-not (Test-Path $archive)) {
+        Write-Host "Загрузка открытой платформы: $url"
+        $prev = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+        try { Invoke-WebRequest -Uri $url -OutFile "$archive.part" -UseBasicParsing } finally { $ProgressPreference = $prev }
+        Move-Item "$archive.part" $archive -Force
+    }
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Write-Host "Распаковка $asset"
+    if ($asset.EndsWith('.zip')) { Expand-Archive -Path $archive -DestinationPath $dir -Force }
+    else {
+        & tar -xzf $archive -C $dir --strip-components=1
+        if ($LASTEXITCODE -ne 0) { Fail "Не удалось распаковать $archive" }
+    }
+    return $dir
+}
+
+function Get-ProductDir([string]$Os = 'windows') { return Join-Path $script:ProjectRoot "build/product/$Os/OpenData-IDE" }

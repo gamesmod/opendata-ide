@@ -2,55 +2,67 @@
 
 [![build](https://github.com/gamesmod/opendata-ide/actions/workflows/build.yml/badge.svg)](https://github.com/gamesmod/opendata-ide/actions/workflows/build.yml)
 
-Локальная настольная IDE для реляционных СУБД на базе **JetBrains IntelliJ Platform** с максимальным
-переиспользованием **Database Tools and SQL** (DataGrip) и `intellij.grid`. Полное ТЗ лежит в [`CLAUDE.md`](CLAUDE.md).
+Лёгкая настольная IDE для работы с СУБД, собранная как **самостоятельный продукт** на открытой
+**IntelliJ Platform** (IntelliJ IDEA Open Source 2026.2.3, Apache 2.0). Поддерживаются
+**PostgreSQL**, **Apache Cloudberry**, **ClickHouse** и **Dremio**.
 
-Главный принцип: собственную DB-инфраструктуру не пишем. Data Sources, Database Explorer, SQL Console,
-SQL PSI и диалекты, completion, query execution, DataGrid, редактирование, DDL и транзакции берутся
-из штатного плагина `com.intellij.database` той же установки JetBrains.
+В дистрибутиве только ядро платформы, открытый модуль `intellij.grid` (DataGrid) и собственный DB-слой
+`opendata-db`. Плагинов Java, Kotlin, Git, Markdown и других нет, советы при запуске, onboarding и проверка
+обновлений отключены.
+Закрытый плагин JetBrains *Database Tools and SQL* в продукт не входит и не требуется.
 
-## Состояние
+## Возможности
 
-| Этап | Что сделано в репозитории | Что нужно сделать на машине разработчика |
-|---|---|---|
-| 0 — Research | **выполнено на DataGrip 2026.2.6**: отчёты в `docs/`. `tools/research/Research.java` сам извлекает из установки IDE/DataGrip версии, `plugin.xml`, content modules, EP, сервисы, tool windows, классы `com.intellij.database.*`/`sql`/`grid` с пометками `@ApiStatus.Internal`, а также сигнатуры javap; затем генерирует `docs/*.md` | запустить `scripts\research.ps1` и разобрать отчёт |
-| 1 — POC | **сборка и 16/16 тестов проходят**: Data Source, Test Connection, introspection и commit/rollback через штатный API Database Tools | принять JetBrains User Agreement при первом `scripts\run.ps1 -Poc` и пройти UI-пункты [`docs/acceptance.md`](docs/acceptance.md) |
-| 2–4 — Console / DataGrid / Editing | собственного кода нет (всё штатное), есть тестовая БД и контрольные запросы | ручная приёмка по [`docs/acceptance.md`](docs/acceptance.md) |
-| 5 — продукт OpenData IDE | план и варианты в [`opendata/product/README.md`](opendata/product/README.md) | только после успешного POC (ТЗ, раздел 41) |
+| Функция | Реализация |
+|---|---|
+| Источники данных: Add / Edit / Duplicate / Delete, Test Connection, драйвер, host/port/db/user, JDBC URL, свойства | `opendata-db`, пароли в `PasswordSafe` |
+| Драйверы JDBC | PostgreSQL входит в комплект; ClickHouse и Arrow Flight SQL (Dremio) загружаются из Maven Central с проверкой SHA-256 или берутся из локального каталога |
+| Database Explorer | схемы, таблицы, представления, функции, последовательности, типы; колонки, ключи, индексы, триггеры, ограничения |
+| SQL Console | подсветка, completion по метаданным (таблицы, колонки, алиасы), Ctrl+Enter, скрипт, отмена, ошибки с позицией, Auto-commit / Commit / Rollback, история запросов |
+| Результаты | открытый JetBrains **DataGrid**: выделение, копирование, сортировка, фильтр, ширина колонок, NULL, даты, JSON, LOB |
+| Редактор таблицы | двойной клик в Explorer: WHERE / ORDER BY, постраничная загрузка, редактирование, вставка и удаление строк, Submit / Revert |
+| DDL | таблицы, представления, индексы, последовательности, функции, схемы |
 
-## Быстрый старт (Windows 11)
+Различия по СУБД (транзакции, редактирование, DDL) описаны в [`docs/databases.md`](docs/databases.md).
 
-Требования: JDK 21 (с `javac`; задайте `JAVA_HOME`), установленные DataGrip **или** IntelliJ IDEA с
-плагином Database Tools and SQL, а также Docker Desktop для тестовой PostgreSQL (необязательно).
+## Установка
+
+Готовые сборки лежат в [Releases](https://github.com/gamesmod/opendata-ide/releases):
+
+- Windows x64: `OpenData-IDE-<версия>-windows-x64.zip` → распаковать → `bin\opendata64.exe`;
+- Linux x64: `OpenData-IDE-<версия>-linux-x64.tar.gz` → распаковать → `bin/opendata`.
+
+Java ставить не нужно: JetBrains Runtime 25 входит в дистрибутив.
+
+## Сборка из исходников
+
+Нужен JDK 21 (с `javac`). Открытая платформа загрузится автоматически с GitHub JetBrains/intellij-community.
 
 ```powershell
-# необязательно, если IDE стоит в стандартном каталоге (Toolbox / Program Files):
-$env:JETBRAINS_IDE_HOME = "C:\Program Files\JetBrains\DataGrip 2025.2"
-
-.\scripts\research.ps1               # этап 0 → docs\jetbrains-db-analysis.md и др.
-.\scripts\build.ps1                  # проверки + сборка плагина + тесты
-docker compose -f docker\docker-compose.yml up -d
-.\scripts\test.ps1 -WithPostgres     # smoke + JDBC integration tests
-.\scripts\run.ps1 -Poc               # песочница IDE с Database Tools + отчёт диагностики
+.\scripts\build.ps1                 # Windows: плагин, тесты, продукт и ZIP
+.\scripts\test.ps1 -WithDocker      # тесты на PostgreSQL, ClickHouse и Dremio из docker\docker-compose.yml
+.\scripts\run.ps1                   # запуск собранной IDE
+.\scripts\run.ps1 -Check            # проверка запуска без UI-действий
 ```
 
-Linux и macOS: те же шаги через `scripts/*.sh`. Подробности в [`docs/build.md`](docs/build.md).
+На Linux и macOS используются `scripts/*.sh` с теми же шагами. Подробности: [`docs/build.md`](docs/build.md).
 
 ## Структура
 
 ```text
-opendata/
-├── integration/        плагин интеграции (диагностика, точки расширения OpenData)
-└── product/            этап 5: конфигурация продукта OpenData IDE (план)
-tools/research/         инструмент этапа 0 (Java single-file, JDK 17+)
-scripts/                build / run / test / research (.ps1 — Windows, .sh — Linux/macOS)
-docker/                 тестовая PostgreSQL 16 + init-скрипт (opendata_test и объекты для Explorer)
-docs/                   архитектура, сборка, отчёты research, матрица совместимости, roadmap
+opendata/db/            DB-слой и UI: источники данных, драйверы, сессии, метаданные, SQL, DataGrid, Explorer
+tools/product/          AssembleProduct.java: сборка продукта из открытой платформы (брендинг, состав плагинов)
+tools/research/         инструмент этапа 0 (анализ установленного DataGrip, только для исследования)
+scripts/                build / run / test (.ps1 для Windows, .sh для Linux и macOS)
+docker/                 тестовый стенд: PostgreSQL 16, ClickHouse 25.8, Dremio OSS 26
+docs/                   архитектура, сборка, СУБД, приёмка, roadmap, совместимость
 ```
 
-## Лицензирование
+## Лицензии
 
-Database Tools and SQL — закрытый плагин JetBrains. Его использование в песочнице IntelliJ на базе
-установленного у вас DataGrip или IDEA (этапы 0–4) не выходит за рамки обычной разработки плагина.
-Этап 5 (отдельный продукт со своим брендингом, куда входит этот плагин) нужно до начала работ сверить
-с текстом лицензии JetBrains: см. [`docs/roadmap.md`](docs/roadmap.md), риск R1.
+Лицензия собственного кода OpenData пока не выбрана: файла `LICENSE` в репозитории нет. Платформа IntelliJ и модуль `intellij.grid` взяты из
+открытой сборки JetBrains/intellij-community (Apache 2.0), см. `NOTICE-OpenData.txt` в дистрибутиве.
+Драйверы распространяются под своими лицензиями: PostgreSQL JDBC — BSD-2, ClickHouse JDBC и Apache Arrow — Apache 2.0.
+
+Версия 0.1.0 была плагином к DataGrip поверх закрытого *Database Tools and SQL*. Начиная с 0.2.0 IDE
+самостоятельная и закрытые компоненты JetBrains не использует. Причины изложены в [`docs/architecture.md`](docs/architecture.md).

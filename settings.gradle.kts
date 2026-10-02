@@ -13,7 +13,8 @@ pluginManagement {
 
 rootProject.name = "opendata-ide"
 
-// OpenData-модули (ТЗ, раздел 28). Модули появляются по мере необходимости:
-//   integration — плагин интеграции с Database Tools (этапы 1–4)
-//   product     — конфигурация продукта OpenData IDE (этап 5, см. opendata/product/README.md)
-include(":opendata:integration")
+// OpenData IDE (ТЗ, раздел 28):
+//   opendata/db      — DB-слой продукта (источники данных, Explorer, SQL-консоль, DataGrid, редактирование)
+//   tools/product    — сборщик продукта на базе открытой IntelliJ Platform (см. assembleProduct)
+//   tools/research   — инструмент этапа 0 (анализ установки DataGrip/IDEA)
+include(":opendata:db")

@@ -720,9 +720,12 @@ public class Research {
         Path f = out.resolve("compatibility-matrix.md");
         String begin = "<!-- rows:begin -->", end = "<!-- rows:end -->";
         List<String> rows = new ArrayList<>();
+        String tail = "";
         if (Files.isRegularFile(f)) {
             String old = Files.readString(f);
             int b = old.indexOf(begin), e = old.indexOf(end);
+            // Всё после rows:end ведётся вручную (матрица продукта OpenData IDE) и сохраняется.
+            if (e >= 0) tail = old.substring(e + end.length()).replaceFirst("^\n", "");
             if (b >= 0 && e > b)
                 for (String l : old.substring(b + begin.length(), e).split("\n"))
                     if (l.startsWith("|") && !l.startsWith("| Ключ") && !l.startsWith("|---")) rows.add(l);
@@ -737,7 +740,7 @@ public class Research {
                 + " | " + buildNumber() + " | " + ("DB".equals(productCode()) ? buildNumber() : "—") + " | " + (db != null ? nz(db.version) : "нет")
                 + " | " + jbrVersion + " | " + kotlinVersion.replaceAll(" \\(.*", "") + " | " + gradleVersion + " | "
                 + status + " |");
-        StringBuilder s = new StringBuilder("# Матрица совместимости\n\n");
+        StringBuilder s = new StringBuilder("# Матрица совместимости\n\n## Установки JetBrains, исследованные на этапе 0\n\n");
         s.append("Строки добавляются `scripts/research.ps1` для каждой проверенной установки. Колонка «Статус» обновляется вручную ")
                 .append("после прохождения build/POC (`research OK` → `build OK` → `POC OK`).\n\n")
                 .append("Правило: IntelliJ Platform, Database Tools и grid берутся из **одной** установки (одна build-линейка); ")
@@ -746,7 +749,7 @@ public class Research {
                 .append("| Ключ | Дата | Продукт | IntelliJ build | DataGrip build | Database Tools | JBR | Kotlin (IDE) | Gradle | Статус |\n")
                 .append("|---|---|---|---|---|---|---|---|---|---|\n");
         rows.forEach(r -> s.append(r).append('\n'));
-        s.append(end).append('\n');
+        s.append(end).append('\n').append(tail);
         Files.writeString(f, s.toString());
     }
 

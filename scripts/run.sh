@@ -1,17 +1,33 @@
 #!/usr/bin/env bash
-# Запуск песочницы: ./scripts/run.sh [--poc] [IDE_HOME]
+# Запуск собранной OpenData IDE:
+#   ./scripts/run.sh                                   — обычный запуск
+#   ./scripts/run.sh --check                           — проверка запуска (плагины загружены, окна есть): RESULT=OK
+#   ./scripts/run.sh --smoke <id источника> [schema.table]
+# Самопроверка раскрывает источник в Database Explorer, выполняет запрос из консоли (DataGrid), открывает таблицу
+# и пишет отчёт в build/poc/diagnostics.txt. Свой запрос — переменная OPENDATA_SMOKE_SQL. Без дисплея — xvfb-run.
 source "$(dirname "$0")/common.sh"
-POC=""; [[ "${1:-}" == "--poc" ]] && { POC=1; shift; }
-assert_jdk; find_ide "${1:-}"; run_research --check >/dev/null || true; assert_compatibility
-gradle_args_base
-REPORT="$PROJECT_ROOT/build/poc/diagnostics.txt"
-if [[ -n "$POC" ]]; then
-  mkdir -p "$PROJECT_ROOT/build/poc/project"; cp "$PROJECT_ROOT"/docs/poc/*.sql "$PROJECT_ROOT/build/poc/project/" 2>/dev/null || true
-  rm -f "$REPORT"; GRADLE_ARGS+=("-PopenProject=$PROJECT_ROOT/build/poc/project")
+exe="$(product_dir)/bin/opendata"
+[[ -x "$exe" ]] || fail "IDE не собрана: ./scripts/build.sh"
+mode="${1:-}"
+if [[ "$mode" != "--smoke" && "$mode" != "--check" ]]; then
+  exec "$exe"
 fi
-run_gradle "${GRADLE_ARGS[@]}" :opendata:integration:runIde
-if [[ -n "$POC" ]]; then
-  [[ -f "$REPORT" ]] || fail "Отчёт $REPORT не создан"
-  cat "$REPORT"; grep -q 'RESULT: OK' "$REPORT" || fail "POC: диагностика не пройдена"
-  echo "POC (автоматическая часть): OK"
-fi
+ds=""; table=""
+if [[ "$mode" == "--smoke" ]]; then ds="${2:?id источника данных}"; table="${3:-}"; fi
+report="$PROJECT_ROOT/build/poc/diagnostics.txt"; mkdir -p "$(dirname "$report")"; rm -f "$report"
+vm="$PROJECT_ROOT/build/poc/smoke.vmoptions"
+{
+  echo "-Dopendata.diagnostics.file=$report"
+  [[ -n "$ds" ]] && echo "-Dopendata.smoke=$ds"
+  [[ -n "$table" ]] && echo "-Dopendata.smoke.table=$table"
+  [[ -n "${OPENDATA_SMOKE_SQL:-}" ]] && echo "-Dopendata.smoke.sql=$OPENDATA_SMOKE_SQL"
+  true
+} > "$vm"
+OPENDATA_VM_OPTIONS="$vm" "$exe" >/dev/null 2>&1 &
+pid=$!
+for _ in $(seq 1 120); do [[ -f "$report" ]] && break; sleep 2; done
+[[ -f "$report" ]] || { kill "$pid" 2>/dev/null; fail "Отчёт самопроверки не создан"; }
+sleep 2; cat "$report"; kill "$pid" 2>/dev/null || true
+marker="RESULT=OK"; [[ -n "$ds" ]] && marker="SMOKE=OK"
+grep -q "$marker" "$report" || fail "Самопроверка не пройдена"
+echo "$marker"

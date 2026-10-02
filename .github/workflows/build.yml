@@ -1,4 +1,5 @@
-# Сборка и тесты OpenData IDE на реальном DataGrip + PostgreSQL 16.
+# Сборка OpenData IDE (открытая IntelliJ Platform + DB-слой opendata-db), тесты на реальных PostgreSQL / ClickHouse / Dremio,
+# самопроверка собранной IDE под Xvfb и сборка дистрибутивов Linux (tar.gz) и Windows (zip).
 # После зелёной сборки main публикуется GitHub Release v<version> (если его ещё нет).
 name: build
 
@@ -12,16 +13,18 @@ on:
 permissions:
   contents: write
 
-env:
-  DATAGRIP_VERSION: "2026.2.6"
-  OPENDATA_PG_URL: jdbc:postgresql://localhost:54329/opendata
-  OPENDATA_PG_USER: opendata
-  OPENDATA_PG_PASSWORD: opendata
-
 jobs:
-  build:
+  linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      OPENDATA_PG_URL: jdbc:postgresql://localhost:54329/opendata
+      OPENDATA_PG_USER: opendata
+      OPENDATA_PG_PASSWORD: opendata
+      # Cloudberry: отдельного образа в CI нет — проверяется режим совместимости на том же PostgreSQL.
+      OPENDATA_CB_URL: jdbc:postgresql://localhost:54329/opendata
+      OPENDATA_CH_URL: jdbc:clickhouse://localhost:8123/opendata
+      OPENDATA_DREMIO_URL: jdbc:arrow-flight-sql://localhost:32010/?useEncryption=false
     services:
       postgres:
         image: postgres:16
@@ -33,6 +36,14 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U opendata -d opendata"
           --health-interval 3s --health-timeout 3s --health-retries 30
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.8
+        env:
+          CLICKHOUSE_SKIP_USER_SETUP: "1"
+        ports: [ "8123:8123" ]
+      dremio:
+        image: dremio/dremio-oss:26.0
+        ports: [ "9047:9047", "32010:32010" ]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,48 +54,148 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Cache DataGrip
-        id: dg-cache
+      - name: Platform version
+        id: platform
+        run: echo "version=$(sed -n 's/^ossPlatformVersion=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache open IntelliJ platform
         uses: actions/cache@v4
         with:
-          path: ~/jb/DataGrip-${{ env.DATAGRIP_VERSION }}
-          key: datagrip-${{ env.DATAGRIP_VERSION }}
+          path: build/platform/${{ steps.platform.outputs.version }}/linux
+          key: oss-platform-linux-${{ steps.platform.outputs.version }}
 
-      - name: Download DataGrip ${{ env.DATAGRIP_VERSION }}
-        if: steps.dg-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/jb
-          curl -sSL "https://download.jetbrains.com/datagrip/datagrip-${DATAGRIP_VERSION}.tar.gz" | tar xz -C ~/jb
-
-      - name: Init test database
+      - name: Init PostgreSQL
         env:
           PGPASSWORD: opendata
         run: psql -h localhost -p 54329 -U opendata -d opendata -v ON_ERROR_STOP=1 -q -f docker/postgres/init/01-opendata.sql
 
-      - name: Research (stage 0) + compatibility check
+      - name: Init ClickHouse
         run: |
-          export JETBRAINS_IDE_HOME=~/jb/DataGrip-${DATAGRIP_VERSION}
-          bash scripts/research.sh "$JETBRAINS_IDE_HOME"
+          for i in $(seq 1 60); do curl -sf http://localhost:8123/ping && break; sleep 2; done
+          docker exec -i ${{ job.services.clickhouse.id }} clickhouse-client --multiquery < docker/clickhouse/01-opendata.sql
 
-      - name: Build + tests
-        run: ./gradlew --console=plain -PlocalIdePath=$HOME/jb/DataGrip-${DATAGRIP_VERSION} :opendata:integration:buildPlugin :opendata:integration:test
+      - name: Init Dremio
+        run: bash docker/dremio/init.sh
+
+      - name: Build + tests (scripts/build.sh)
+        run: bash scripts/build.sh
 
       - name: Test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: opendata/integration/build/test-results/test/*.xml
+          path: opendata/db/build/test-results/test/*.xml
+
+      - name: Smoke test of the assembled IDE (Xvfb)
+        run: |
+          sudo apt-get install -y -q xvfb >/dev/null
+          cfg="$HOME/.config/OpenData/OpenData2026.2/options"
+          mkdir -p "$cfg"
+          cat > "$cfg/opendata-datasources.xml" <<'EOF'
+          <application>
+            <component name="OpenDataDataSources">
+              <dataSources>
+                <data-source>
+                  <option name="id" value="pg-local" />
+                  <option name="name" value="PostgreSQL" />
+                  <option name="kind" value="POSTGRESQL" />
+                  <option name="url" value="jdbc:postgresql://localhost:54329/opendata?password=opendata" />
+                  <option name="user" value="opendata" />
+                </data-source>
+                <data-source>
+                  <option name="id" value="ch-local" />
+                  <option name="name" value="ClickHouse" />
+                  <option name="kind" value="CLICKHOUSE" />
+                  <option name="host" value="localhost" />
+                  <option name="port" value="8123" />
+                  <option name="database" value="opendata" />
+                  <option name="user" value="default" />
+                </data-source>
+                <data-source>
+                  <option name="id" value="dremio-local" />
+                  <option name="name" value="Dremio" />
+                  <option name="kind" value="DREMIO" />
+                  <option name="url" value="jdbc:arrow-flight-sql://localhost:32010/?useEncryption=false&amp;user=dremio&amp;password=dremio123" />
+                  <option name="user" value="dremio" />
+                </data-source>
+              </dataSources>
+            </component>
+          </application>
+          EOF
+          xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/run.sh --smoke pg-local public.opendata_test
+          OPENDATA_SMOKE_SQL="SELECT number AS id, toString(number) AS value FROM numbers(100)" \
+            xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/run.sh --smoke ch-local opendata.events
+          OPENDATA_SMOKE_SQL="SELECT * FROM opendata.events_v" \
+            xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/run.sh --smoke dremio-local opendata.events_v
+
+      - name: Linux distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendata-ide-linux
+          path: build/distributions/OpenData-IDE-*-linux-x64.tar.gz
+          compression-level: 0
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Platform version
+        id: platform
+        shell: pwsh
+        run: '"version=" + ((Get-Content gradle.properties | Select-String "^ossPlatformVersion=") -replace "^ossPlatformVersion=","") >> $env:GITHUB_OUTPUT'
+
+      - name: Cache open IntelliJ platform
+        uses: actions/cache@v4
+        with:
+          path: build/platform/${{ steps.platform.outputs.version }}/windows
+          key: oss-platform-windows-${{ steps.platform.outputs.version }}
+
+      - name: Build (scripts/build.ps1)
+        shell: pwsh
+        # DB-тесты выполняются в linux-job (нужны контейнеры СУБД); здесь — сборка и проверка запуска.
+        run: ./scripts/build.ps1 -SkipTests
+
+      - name: Startup check of the assembled IDE
+        shell: pwsh
+        run: ./scripts/run.ps1 -Check
+
+      - name: Windows distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendata-ide-windows
+          path: build/distributions/OpenData-IDE-*-windows-x64.zip
+          compression-level: 0
 
       - name: Plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opendata-integration
-          path: opendata/integration/build/distributions/*.zip
+          name: opendata-db-plugin
+          path: opendata/db/build/distributions/*.zip
+
+  release:
+    needs: [ linux, windows ]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: GitHub Release
-        # Релиз v<version из gradle.properties> создаётся один раз: после зелёной сборки main (или по тегу v*).
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        # Релиз v<version из gradle.properties> создаётся один раз.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -94,5 +205,6 @@ jobs:
             echo "Release $TAG already exists — skip"
             exit 0
           fi
-          gh release create "$TAG" opendata/integration/build/distributions/*.zip \
+          ls -la dist
+          gh release create "$TAG" dist/OpenData-IDE-*-linux-x64.tar.gz dist/OpenData-IDE-*-windows-x64.zip dist/opendata-db-*.zip \
             --target "$GITHUB_SHA" --title "OpenData IDE $TAG" --notes-file docs/release-notes.md

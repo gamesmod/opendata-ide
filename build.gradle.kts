@@ -26,3 +26,29 @@ tasks.register<Exec>("research") {
     }
     workingDir = rootDir
 }
+
+// Этап 5: сборка продукта OpenData IDE из открытой платформы и плагина opendata-db.
+// gradlew assembleProduct -PossIdePath=<распакованная открытая сборка> [-PproductOs=linux|windows]
+tasks.register<Exec>("assembleProduct") {
+    group = "opendata"
+    description = "Собирает дистрибутив OpenData IDE в build/product/<os>/OpenData-IDE"
+    dependsOn(":opendata:db:buildPlugin", ":opendata:db:prepareDrivers")
+    val base = providers.gradleProperty("ossIdePath").orElse(providers.environmentVariable("OPENDATA_PLATFORM_HOME"))
+    val os = providers.gradleProperty("productOs").orElse("linux")
+    val version = project.version.toString()
+    val javaHome = System.getProperty("java.home")
+    doFirst {
+        val plugin = file("opendata/db/build/distributions").listFiles { f -> f.name.endsWith(".zip") }!!.maxBy { it.lastModified() }
+        val args = mutableListOf(
+            "$javaHome/bin/java", "-Djava.awt.headless=true", "tools/product/AssembleProduct.java",
+            "--base", base.get(), "--plugin", plugin.absolutePath,
+            "--drivers", file("opendata/db/build/drivers").absolutePath,
+            "--out", file("build/product/${os.get()}/OpenData-IDE").absolutePath, "--version", version,
+        )
+        if (os.get() == "windows") {
+            args += listOf("--zip", file("build/distributions/OpenData-IDE-$version-windows-x64.zip").absolutePath)
+        }
+        commandLine(args)
+    }
+    workingDir = rootDir
+}

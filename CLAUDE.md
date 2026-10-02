@@ -1202,16 +1202,15 @@ IntelliJ sandbox/product
 
 ## 42. Текущее состояние репозитория (для продолжения работы)
 
-- Этап 0 автоматизирован: `scripts/research.ps1` → `tools/research/Research.java` генерирует
-  `docs/jetbrains-db-analysis.md`, `docs/grid-analysis.md`, `docs/plugin-dependencies.md`,
-  `docs/compatibility-matrix.md`, `docs/research/api/*.txt` (javap) по локальной установке IDE.
-  **Первое действие в новой сессии — запустить research и опираться только на его вывод.**
-- POC: плагин `opendata/integration` (`<depends>com.intellij.database</depends>`), диагностика
-  `OpenDataDiagnostics` (только публичный API платформы), `scripts/run.ps1 -Poc` → `build/poc/diagnostics.txt`.
-- Тесты: `DatabaseToolsAvailabilityTest` (платформа), `PostgresJdbcSmokeTest` (стенд `docker/`).
-- Ручная приёмка этапов 1–4 и DoD: `docs/acceptance.md`. План и оценки: `docs/roadmap.md`.
-- Проверено на DataGrip 2026.2.6 (262.10968.148): Gradle 9.8.0, IPGP 2.19.0, Kotlin 2.4.20, JDK 21 → build OK, тесты 16/16
-  (включая `DatabaseToolsPostgresScenarioTest`: Data Source → Test Connection → introspection → commit/rollback через API Database Tools).
-- Используемые API Database Tools и особенности (внешний JDBC-процесс, EDT) описаны в реестре `docs/architecture.md`.
-- `runIde` при первом запуске показывает JetBrains User Agreement — его принимает пользователь, не агент.
-- Этап 5: `opendata/product/README.md` (варианты A/B), перед стартом — юридическая проверка (roadmap R-6).
+- **С 0.2.0 продукт — самостоятельная IDE на открытой IntelliJ Platform** (`ossPlatformVersion` в `gradle.properties`,
+  сейчас 2026.2.3 / IC-262.10968.63). Закрытый Database Tools and SQL не используется и не встраивается: лицензия
+  и проверка `com.intellij.modules.database-capable` (см. `docs/architecture.md`). Плагин 0.1.0 (`opendata/integration`) удалён.
+- Модуль `opendata/db` (`io.opendata.db`): DB-слой на JDBC + открытый `intellij.grid` (реестр API grid — `docs/architecture.md`).
+  СУБД: PostgreSQL, Apache Cloudberry (драйвер PG), ClickHouse, Dremio (Arrow Flight SQL); всё СУБД-специфичное — `model/DbKind.kt`.
+- Продукт: `tools/product/AssembleProduct.java` (задача `assembleProduct`): состав плагинов, брендинг, launcher, ZIP.
+- Скрипты: `scripts/build.*` (платформа → плагин + тесты → продукт), `scripts/test.* --with-docker`, `scripts/run.* [--check | --smoke <id>]`.
+- Тесты: `:opendata:db:test` — 23 (PG, CB-режим, CH, Dremio через `OPENDATA_*_URL`); smoke собранной IDE — `run.* --smoke`.
+- CI: `.github/workflows/build.yml` — linux (СУБД-сервисы, тесты, smoke под Xvfb, tar.gz), windows (ZIP, `run.ps1 -Check`), release.
+- Этап 0 (исследование DataGrip) сохранён как история: `scripts/research.*`, `docs/jetbrains-db-analysis.md` и др.
+  Сырые выгрузки `docs/research/*` в публичный репозиторий не публикуются.
+- Приёмка и DoD: `docs/acceptance.md`; СУБД: `docs/databases.md`, `docs/postgresql.md`; план и оценки (чд): `docs/roadmap.md`.

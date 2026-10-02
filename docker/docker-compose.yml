@@ -1,6 +1,11 @@
-# Тестовая PostgreSQL для OpenData IDE.
-#   docker compose -f docker/docker-compose.yml up -d
-# JDBC: jdbc:postgresql://localhost:54329/opendata  user/password: opendata/opendata
+# Тестовый стенд OpenData IDE: PostgreSQL 16, ClickHouse, Dremio OSS.
+#   docker compose -f docker/docker-compose.yml up -d --wait
+#   docker/dremio/init.sh            # один раз: пользователь dremio/dremio123, пространство opendata, view events_v
+#
+# PostgreSQL : jdbc:postgresql://localhost:54329/opendata              opendata / opendata
+# ClickHouse : jdbc:clickhouse://localhost:8123/opendata               default / (пусто)
+# Dremio     : jdbc:arrow-flight-sql://localhost:32010/?useEncryption=false   dremio / dremio123  (UI http://localhost:9047)
+# Cloudberry : отдельный стенд Apache Cloudberry (см. docs/postgresql.md); протокол и каталог совместимы с PostgreSQL.
 services:
   postgres:
     image: postgres:16
@@ -18,3 +23,30 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: opendata-clickhouse
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  dremio:
+    image: dremio/dremio-oss:26.0
+    container_name: opendata-dremio
+    ports:
+      - "9047:9047"
+      - "32010:32010"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9047/apiv2/server_status || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60

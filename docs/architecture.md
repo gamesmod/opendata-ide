@@ -1,86 +1,123 @@
 # Архитектура OpenData IDE
 
-## Принцип
+## Почему отдельный продукт, а не плагин к DataGrip
 
-Порядок принятия решений (ТЗ, раздел 2):
+Версия 0.1.0 была плагином поверх закрытого *Database Tools and SQL* (`com.intellij.database`). Задача
+поменялась: нужна полноценная самостоятельная IDE. Закрытый плагин в ней использовать нельзя по двум причинам.
 
-1. готовый API или модуль Database Tools and SQL / DataGrip;
-2. IntelliJ Platform API;
-3. `intellij.grid` (Data Editor and Viewer);
-4. стандартный JDBC;
-5. собственная реализация, только если подходящего API нет.
+1. Лицензия JetBrains не разрешает распространять Database Tools в составе стороннего продукта,
+   в том числе некоммерческого и учебного.
+2. Плагин проверяет модуль `com.intellij.modules.database-capable`. Его объявляют только продукты JetBrains,
+   и обходить эту проверку мы не будем.
+
+Поэтому порядок переиспользования из ТЗ (раздел 2) применён к **открытой** части стека:
+
+| Уровень ТЗ | Что взято |
+|---|---|
+| 1. API DataGrip / Database Tools | закрытый, в продукт не входит (исследование этапа 0 сохранено в `docs/jetbrains-db-analysis.md`) |
+| 2. IntelliJ Platform API | вся платформа: редактор, PSI, Lexer/Highlighter, completion, tool windows, actions, `PasswordSafe`, фоновые задачи |
+| 3. `intellij.grid` | DataGrid, модель строк и колонок, редактирование, мутации, paging (открытый модуль Apache 2.0) |
+| 4. Стандартный JDBC | подключение, выполнение, метаданные (`DatabaseMetaData`, `pg_catalog`, `system.*`, `INFORMATION_SCHEMA`) |
+| 5. Собственный код | только то, чего нет в открытом стеке: модель источников данных, драйверы, лёгкий SQL-лексер, Explorer, связь JDBC ↔ grid |
 
 ## Слои
 
 ```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│ IntelliJ Platform (из локальной установки IDE/DataGrip — одна build-линия)│
-│   Editor · PSI · VFS · Project model · Actions · Tool Windows · Settings  │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Database Tools and SQL  (bundledPlugin "com.intellij.database")           │
-│   Data Sources · Driver Manager · Database Explorer · SQL Console         │
-│   Introspection/metadata · SQL PSI/dialects · Completion · Navigation     │
-│   Query execution · Transactions · DDL · Query history                    │
-│   intellij.grid.* (content modules) — DataGrid, editing, table editor     │
-├──────────────────────────────────────────────────────────────────────────┤
-│ OpenData                                                                  │
-│   integration  — диагностика интеграции, будущие адаптеры                 │
-│   product      — branding, product code, launcher (этап 5)                │
-│   drivers / extensions-api / extensions-ui / plugins — по мере появления  │
-│                  реально отсутствующих функций (ТЗ, раздел 28)            │
-└──────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│ Открытая IntelliJ Platform 2026.2.3 (IC-262.10968.63, JBR 25)                   │
+│   Editor · PSI · VFS · Actions · Tool Windows · PasswordSafe · Progress/Tasks  │
+├───────────────────────────────────────────────────────────────────────────────┤
+│ intellij.grid.core.plugin (+ platform-structureView-plugin, его зависимость)   │
+│   DataGrid · DataGridListModel · GridMutator · GridPagingModel · CSV/копирование│
+├───────────────────────────────────────────────────────────────────────────────┤
+│ opendata-db (io.opendata.db)                                                   │
+│   model/    DbKind, DataSourceConfig, DataSourceStorage (+ PasswordSafe)       │
+│   drivers/  DriverService: изолированный URLClassLoader, загрузка + SHA-256    │
+│   session/  DbSession, DbSessions, QueryExecutor, SqlSplitter, DbError         │
+│   meta/     MetadataLoader, MetadataCache, DdlGenerator                        │
+│   lang/     SQL: FileType, Lexer, Highlighter, Commenter, Completion           │
+│   grid/     ResultGrids, TableDataController, TablePager, TableMutator         │
+│   ui/       Database Explorer, Results, Console, DataSourceDialog,             │
+│             TableDataEditor, Workspace, SmokeTest                              │
+├───────────────────────────────────────────────────────────────────────────────┤
+│ tools/product/AssembleProduct.java — состав плагинов, брендинг, launcher, ZIP  │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Как подключается JetBrains DB stack
+## Продукт
 
-| Способ (ТЗ, раздел 8) | Статус | Реализация |
-|---|---|---|
-| 8.1 Bundled plugin dependency | **основной** | `bundledPlugin("com.intellij.database")` в `opendata/integration/build.gradle.kts` и `<depends>com.intellij.database</depends>` в `plugin.xml`. Транзитивные content modules (SQL, grid) резолвит IntelliJ Platform Gradle Plugin |
-| 8.2 Локальные JAR | основной источник платформы | `local(JETBRAINS_IDE_HOME / DATAGRIP_HOME / -PlocalIdePath)`: и платформа, и плагин берутся из одной установки, поэтому build-линии совпадают |
-| 8.3 Исходные модули intellij-community | не требуется для этапов 0–4 | нужны для анализа исходников `grid/` (`--community`) и для варианта B этапа 5 |
-| 8.4 Собственная реализация | не используется | — |
+`AssembleProduct` берёт распакованную открытую сборку IntelliJ IDEA и выполняет следующие шаги:
 
-## Собственный код (этапы 0–4)
+- оставляет из `plugins/` только `grid-core-plugin` и `platform-structureView-plugin` (без второго grid не загрузится) и добавляет `opendata-db`;
+- удаляет `idea.sh`/`.bat`, `format`/`inspect`/`ltedit`, значки IDEA и бинарный кэш `plugins/plugin-classpath.txt`;
+- кладёт JDBC-драйвер PostgreSQL в `plugins/opendata-db/drivers`;
+- собирает `lib/opendata-branding.jar`: `idea/IdeaApplicationInfo.xml` (OpenData IDE, product code `OD`, essential-плагины `io.opendata.db` и `intellij.grid.core.plugin`), значок и splash;
+- переписывает `product-info.json`: имя, `productCode`, `envVarBaseName=OPENDATA`, `dataDirectoryName`, launcher, порядок `bootClassPathJarNames` (брендинг первым), layout плагинов;
+- переименовывает launcher в `bin/opendata` или `bin\opendata64.exe` и задаёт JVM-параметры (в `additionalJvmArguments` файла `product-info.json` и в `.vmoptions`):
 
-| Компонент | Назначение | Почему не переиспользование |
-|---|---|---|
-| `OpenDataDiagnostics` | проверка: плагин загружен, SQL/PostgreSQL зарегистрированы, есть окно Database | интеграционная проверка самого OpenData, у JetBrains её нет |
-| `OpenDataStartupActivity` | диагностика при открытии проекта и отчёт в файл для POC | то же |
-| `OpenDataDiagnosticsAction` | Tools → OpenData: Integration Diagnostics | то же |
-| `tools/research/Research.java` | автоматизация этапа 0 | инструмент разработки, в продукт не входит |
+```text
+-Dintellij.platform.load.app.info.from.resources=true   # ApplicationInfo из opendata-branding.jar, а не из байт-кода IDEA
+-Didea.paths.selector=OpenData2026.2                    # свои каталоги config/system/logs
+-Didea.vendor.name=OpenData
+-Dide.no.platform.update=true                           # без проверки обновлений
+-Dide.show.tips.on.startup.default.value=false
+-Dide.experimental.ui.onboarding=false                  # без промо-диалога нового UI
+```
 
-Диагностика обращается только к стабильному публичному API платформы (`PluginManagerCore`, `Language`,
-`ToolWindowManager`) и не трогает внутренние классы `com.intellij.database.*`. Внутренние API подключаются
-только после того, как их нашёл research (`docs/jetbrains-db-analysis.md`, раздел 5), и каждое использование
-документируется по шаблону ТЗ, раздел 6 (класс, JAR, build, назначение, точка интеграции, риск).
+IDE работает без пользовательских проектов: при старте открывается служебная папка `~/OpenData`, которая
+сразу помечается доверенной (`TrustedProjects`). Источники данных, история и настройки хранятся на уровне приложения.
 
-## Асинхронность
+## Поддержка СУБД
 
-Собственный код не выполняет DB-операции. Диагностика читает список tool windows на EDT (быстрая операция
-в памяти), всё остальное работает в `ProjectActivity` (корутина, не EDT). DB-операции Database Tools
-выполняет на собственных фоновых задачах.
+Всё, что зависит от СУБД, собрано в `DbKind`; остальной код работает со стандартным JDBC и ветвится по `kind`
+только там, где без этого не обойтись.
 
-## Реестр используемых API Database Tools
-
-Используются в сценарных тестах (`DatabaseToolsPostgresScenarioTest`). Все найдены research'ем в DataGrip 2026.2.6
-(build 262.10968.148). Ни один из классов не помечен `@ApiStatus.Internal`, но это не публичный SDK:
-JetBrains не гарантирует их совместимость между версиями.
-
-| Класс / метод | Модуль/JAR (`plugins/DatabaseTools/lib/modules/`) | Назначение | Точка интеграции | Риск |
+| | PostgreSQL | Apache Cloudberry | ClickHouse | Dremio |
 |---|---|---|---|---|
-| `DatabaseDriverManager.getInstance().getDrivers()`, `updateDriver()` | `intellij.database.core.impl.jar` | штатный драйвер PostgreSQL (id `postgresql`) | Driver Manager | средний |
-| `DatabaseDriver.setAdditionalClasspathElements()` + `SimpleClasspathElementFactory.createElements()` | `intellij.database.core.impl.jar` / платформа | файл JDBC-драйвера без загрузки из сети | Driver Manager | средний |
-| `LocalDataSource.fromDriver(driver, url, temporary)`, `setName/setUsername/setPasswordStorage` | `intellij.database.core.impl.jar` | создание PostgreSQL Data Source | Data Sources | средний |
-| `LocalDataSourceManager.getInstance(project).addDataSource/removeDataSource/getDataSources` | `intellij.database.impl.jar` | регистрация Data Source в проекте (EDT) | Data Sources | средний |
-| `DatabaseCredentials.getInstance().storePassword(config, OneTimeString)` | `intellij.database.core.impl.jar` | пароль через штатное хранилище | PasswordSafe | низкий |
-| `DatabaseConnectionManager.getInstance().build(project, ds).setAskPassword(false).create()` (suspend) → `GuardedRef<DatabaseConnection>` | `intellij.database.connectivity.jar` | Test Connection и сессия | Connectivity | средний; `createBlocking()` вне корутины/прогресса падает |
-| `DatabaseConnection.getRemoteConnection()` → `RemoteConnection` / `RemoteStatement` | `intellij.database.connectivity.jar`, `intellij.database.jdbcConsole.jar` | SELECT, UPDATE, commit/rollback через удалённый JDBC-процесс Database Tools | Query execution | средний |
-| `DataSourceUtil.performManualSyncTask(LoaderContext.selectGeneralTask(project, ds))` → `AsyncTask.toFuture()` | `intellij.database.connectivity.jar`, `intellij.database.core.impl.jar` | schema introspection | Introspection | средний |
-| `DasUtil.getTables(ds)`, `DasUtil.getColumns(table)` | `intellij.database.jar` | чтение модели метаданных | Metadata | низкий |
+| Драйвер | `org.postgresql` 42.7.13 (в комплекте) | драйвер PostgreSQL | `clickhouse-jdbc` 0.10.0 `all` + slf4j | Arrow Flight SQL JDBC 19.0.0 |
+| URL по умолчанию | `jdbc:postgresql://h:5432/db` | то же | `jdbc:clickhouse://h:8123/db` | `jdbc:arrow-flight-sql://h:32010/?useEncryption=false` |
+| Свойства по умолчанию | `stringtype=unspecified`, `ApplicationName` | то же | `compress=0` | — |
+| Транзакции | да | да | нет (auto-commit) | нет |
+| Метаданные | `pg_catalog` | `pg_catalog` | `system.tables/columns/...` | `INFORMATION_SCHEMA` |
+| Позиция ошибки | `ServerErrorMessage.position` | то же | `position N` из текста | — |
+| Редактирование таблиц | по PK | по PK | по первичному ключу (`ALTER TABLE … UPDATE … SETTINGS mutations_sync=2`) | только чтение |
+| DDL | `pg_get_*def` + сборка таблицы | + `DISTRIBUTED BY` | `SHOW CREATE` | DDL представлений |
 
-Наблюдения при интеграции:
+## Реестр используемых API `intellij.grid`
 
-- JDBC-драйвер Database Tools работает во **внешнем процессе** (`RemoteProcessSupport`), рабочим каталогом служит `basePath`
-  проекта. Если каталога нет, подключение падает с ошибкой `WorkingDirectoryNotFoundException`.
-- DB-операции нельзя выполнять в EDT; регистрацию Data Source в `LocalDataSourceManager` нужно делать в EDT.
-- В тестах исполнитель синхронизации (`DataSourceSyncManager`) по умолчанию штатный: `NEW_CONNECTION_EXECUTOR`.
+Все классы найдены в открытой сборке 2026.2.3 (`plugins/grid-core-plugin/lib/modules/`). Модули
+`intellij.grid.core.impl` и `intellij.grid.impl` объявлены публичными, `intellij.grid` и `intellij.grid.types`
+внутренние. Публичного SDK у grid нет, поэтому риск изменения между версиями средний.
+
+| Класс | JAR | Назначение | Где используется |
+|---|---|---|---|
+| `GridUtil.createDataGrid`, `GridUtil.configureCsvTable`, `configureFullSizeTable` | `intellij.grid.impl.jar` | создание DataGrid и стандартное оформление | `ResultGrids.create` |
+| `GridHelper.set`, `GridHelperImpl` | `intellij.grid.impl.jar` | обязательный helper grid; `OpenDataGridHelper` разрешает редактирование только при наличии мутатора | `ResultGrids` |
+| `DataGrid`, `DataGridRequestPlace` | `intellij.grid.impl.jar` | компонент таблицы, источник запросов | Results, редактор таблицы |
+| `CachedGridDataHookUp` | `intellij.grid.core.impl.jar` | связь данных с grid | `TableHookUp` |
+| `DataGridListModel`, `GridColumn`, `GridRow`, `ModelIndex(Set)` | `intellij.grid.core.impl.jar` | модель строк и колонок | `ResultGrids.fill` |
+| `GridStorageAndModelUpdater`, `GridMutationModel` | `intellij.grid.core.impl.jar` | обновление модели с рассылкой событий (без него созданный grid не перерисуется) | `ResultGrids.fill` |
+| `GridMutator.DatabaseMutator`, `MutationData`, `CellMutation`, `MutationType` | `intellij.grid.core.impl.jar` | правка ячеек, вставка и удаление строк, Submit/Revert | `TableMutator` |
+| `GridPagingModel`, `GridLoader`, `GridRequestSource` | `intellij.grid.core.impl.jar` | постраничная загрузка и подсчёт строк | `TablePager`, `TableDataController` |
+| `ReservedCellValue` | `intellij.grid.core.impl.jar` | NULL и DEFAULT в ячейках | `TableMutator` |
+| `SimpleErrorInfo` | `intellij.grid.core.impl.jar` | ошибка запроса в grid | `TableDataController` |
+
+Подключение в `plugin.xml` (модель плагинов v2):
+
+```xml
+<dependencies>
+    <plugin id="intellij.grid.core.plugin"/>
+    <module name="intellij.grid.core.impl"/>
+    <module name="intellij.grid.impl"/>
+</dependencies>
+```
+
+Сборка: `bundledPlugin("intellij.grid.core.plugin")` в `opendata/db/build.gradle.kts`, платформа подключается через `local(ossIdePath)`.
+
+## Асинхронность (ТЗ 24, 25)
+
+- Подключение, introspection, выполнение запросов, загрузка страниц, Submit и DDL выполняются в `Task.Backgroundable`
+  или `executeOnPooledThread`. В EDT модель обновляется только готовым результатом.
+- Отмена: `Statement.cancel()` из наблюдателя за `ProgressIndicator`. После отмены соединение остаётся рабочим (тест `testCancelLongQuery`).
+- JDBC-драйверы загружаются в отдельный `URLClassLoader` с родителем `platform` classloader JDK, поэтому их зависимости
+  не конфликтуют с библиотеками IDE.

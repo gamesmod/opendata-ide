@@ -4,99 +4,107 @@
 
 | Компонент | Версия | Как проверяется |
 |---|---|---|
-| JDK | 21 (с `javac`) | `build.ps1`: `JAVA_HOME`, затем `java` в PATH. Сама IDE 2026.2 работает на JBR 25, но плагин собирается под 21: классы платформы совместимы |
-| JetBrains IDE | DataGrip или IntelliJ IDEA с плагином Database Tools and SQL; baseline не ниже `pluginSinceBuild` из `gradle.properties` | `research --check`, затем `ide.properties` |
-| Gradle | wrapper `9.8.0` (скачивается автоматически) | `gradlew` |
-| IntelliJ Platform Gradle Plugin | `intellijPlatformPluginVersion` в `gradle.properties` | при первой сборке |
-| Kotlin | `kotlinVersion` в `gradle.properties` (не новее Kotlin stdlib в IDE, см. compatibility-matrix) | — |
-| Docker | для тестовой PostgreSQL (необязательно) | `test.ps1 -WithPostgres` |
+| JDK | 21 (с `javac`) | `build.*`: `JAVA_HOME`, затем `java` в PATH. Сама IDE работает на JBR 25 из дистрибутива |
+| Открытая IntelliJ Platform | `ossPlatformVersion` в `gradle.properties` (2026.2.3) | загружается скриптом в `build/platform/<версия>/<ос>` или берётся из `OPENDATA_PLATFORM_HOME` |
+| Gradle | wrapper 9.8.0 | `gradlew` |
+| IntelliJ Platform Gradle Plugin | `intellijPlatformPluginVersion` (2.19.0) | при первой сборке |
+| Kotlin | `kotlinVersion` (2.4.20) | — |
+| Docker | для тестового стенда (необязательно) | `test.* --with-docker` |
 
-Сети нужны Maven Central, Gradle Plugin Portal и services.gradle.org. Если IDE задана локально
-(основной режим), саму платформу из репозитория JetBrains скачивать не нужно.
+Сети нужны GitHub (архив платформы), Maven Central (драйверы и зависимости тестов), Gradle Plugin Portal
+и репозиторий IntelliJ Platform (test framework).
 
-## Поиск IDE (ТЗ 8.2, 29)
+Платформа скачивается с релизов `JetBrains/intellij-community`:
 
-Путь к IDE не хардкодится. Скрипты ищут его в таком порядке:
+| ОС | Архив |
+|---|---|
+| Windows | `idea-<версия>.win.zip` |
+| Linux | `idea-<версия>.tar.gz` |
 
-1. параметр `-IdeHome` (`.sh`: первый аргумент);
-2. `JETBRAINS_IDE_HOME`;
-3. `DATAGRIP_HOME`;
-4. стандартные каталоги установщиков: `%LOCALAPPDATA%\Programs`, `%LOCALAPPDATA%\JetBrains\Toolbox\apps`,
-   `%ProgramFiles%\JetBrains` (а также `/opt`, Toolbox и `/Applications`). Среди найденных установок,
-   где есть Database Tools, выбирается DataGrip, иначе самая свежая сборка.
-
-Для macOS указывайте путь к `.app` (например, `/Applications/DataGrip.app`).
+Если сеть ограничена, распакуйте архив сами и задайте `OPENDATA_PLATFORM_HOME` (или передайте `-PlatformHome`).
 
 ## Команды
 
 ```powershell
-.\scripts\research.ps1 [-IdeHome <path>] [-CommunityHome <intellij-community>]
-.\scripts\build.ps1    [-IdeHome <path>] [-SkipTests] [-SkipResearch]
-.\scripts\test.ps1     [-IdeHome <path>] [-WithPostgres]
-.\scripts\run.ps1      [-IdeHome <path>] [-Poc]
+.\scripts\build.ps1 [-SkipTests] [-PlatformHome <dir>]   # плагин + тесты + продукт + ZIP
+.\scripts\test.ps1  [-WithDocker]                        # тесты DB-слоя; с -WithDocker на стенде из docker\
+.\scripts\run.ps1                                        # запуск собранной IDE
+.\scripts\run.ps1 -Check                                 # проверка запуска (RESULT=OK)
+.\scripts\run.ps1 -Smoke <id источника> [-Table schema.table] [-Sql "..."]
+```
+
+```bash
+./scripts/build.sh                 # SKIP_TESTS=1 — без тестов
+./scripts/test.sh --with-docker
+./scripts/run.sh [--check | --smoke <id> [schema.table]]   # OPENDATA_SMOKE_SQL — свой запрос
 ```
 
 Те же операции напрямую через Gradle:
 
-```powershell
-.\gradlew.bat research "-PlocalIdePath=C:\...\DataGrip 2025.2"
-.\gradlew.bat :opendata:integration:buildPlugin :opendata:integration:test "-PlocalIdePath=..."
-.\gradlew.bat :opendata:integration:runIde "-PlocalIdePath=..."
+```bash
+./gradlew -PossIdePath=<платформа> :opendata:db:buildPlugin :opendata:db:test
+./gradlew -PossIdePath=<платформа> -PproductOs=linux|windows assembleProduct
 ```
 
-Если `localIdePath` не задан, платформа скачивается из репозитория JetBrains по
-`platformType` и `platformVersion` из `gradle.properties` (запасной режим).
+## Что делает build
 
-## Что проверяет build.ps1
+1. Проверяет JDK 21+ с `javac`.
+2. Находит или загружает открытую платформу и проверяет, что её build не ниже `pluginSinceBuild`.
+3. Выполняет `:opendata:db:buildPlugin` и `:opendata:db:test`. Тесты на СУБД пропускаются, если не заданы `OPENDATA_*_URL`.
+4. Выполняет `assembleProduct`. Это `prepareDrivers` и `tools/product/AssembleProduct.java`, результат —
+   `build/product/<ос>/OpenData-IDE`.
+5. Упаковывает дистрибутив в `build/distributions/OpenData-IDE-<версия>-windows-x64.zip` или `…-linux-x64.tar.gz`.
 
-1. JDK 21+ с `javac`.
-2. Установку IDE: `product-info.json`.
-3. `Research.java --check`: есть ли `com.intellij.database`, build number, JBR → `build/research/ide.properties`.
-4. Совместимость: baseline IDE ≥ `pluginSinceBuild`; JBR major не ниже 21 (иначе предупреждение).
-5. Полный research → `docs/*`.
-6. `buildPlugin` + `test`. Готовый плагин лежит в `opendata/integration/build/distributions/*.zip`.
+При любой ошибке сборка останавливается с понятным сообщением.
 
-При любой ошибке сборка останавливается с понятным сообщением (ТЗ, раздел 39: к следующему этапу не переходить).
+## Переменные тестов
+
+| Переменная | Назначение |
+|---|---|
+| `OPENDATA_PG_URL`, `_USER`, `_PASSWORD` | PostgreSQL (по умолчанию `opendata`/`opendata`) |
+| `OPENDATA_CB_URL`, `_USER`, `_PASSWORD` | Apache Cloudberry (по умолчанию учётные данные PG) |
+| `OPENDATA_CH_URL`, `_USER`, `_PASSWORD` | ClickHouse (по умолчанию `default` без пароля) |
+| `OPENDATA_DREMIO_URL`, `_USER`, `_PASSWORD` | Dremio (по умолчанию `dremio`/`dremio123`) |
+| `OPENDATA_DRIVERS_DIR` | каталог JAR драйверов; в тестах по умолчанию `opendata/db/build/test-drivers` |
+
+## Самопроверка собранной IDE
+
+`run.* --smoke` запускает IDE с `-Dopendata.smoke=<id>`. Через настоящие UI-компоненты IDE раскрывает
+источник в Database Explorer, выполняет запрос из консоли и проверяет строки в DataGrid, затем открывает
+редактор таблицы. Отчёт пишется в `build/poc/diagnostics.txt`, успех — строка `SMOKE=OK`. Источник данных
+должен уже существовать в настройках IDE. Как CI создаёт его файлом
+`~/.config/OpenData/OpenData2026.2/options/opendata-datasources.xml`, видно в `.github/workflows/build.yml`.
+На Linux без дисплея запускайте через `xvfb-run`.
 
 ## Проверенная конфигурация
 
 | Компонент | Версия |
 |---|---|
-| DataGrip | 2026.2.6, build DB-262.10968.148 (JBR 25.0.4, Kotlin stdlib 2.4.0) |
+| Платформа | IntelliJ IDEA Open Source 2026.2.3, IC-262.10968.63, JBR 25.0.4 |
 | IntelliJ Platform Gradle Plugin | 2.19.0 |
 | Kotlin | 2.4.20 |
 | Gradle | 9.8.0 |
 | JDK сборки | 21 |
-| Test framework | 262.10968.138 (подбирается IPGP автоматически) |
-| Результат | `buildPlugin` OK, `test` 16/16 OK |
+| Результат | тесты 23/23 (PostgreSQL 16, режим Cloudberry, ClickHouse 26.10, Dremio OSS 26.0.5); smoke Linux-продукта OK для всех четырёх СУБД |
 
 ### Известные особенности
 
-- **HTTP 429 от Maven Central.** При первой загрузке зависимостей Maven Central может ограничить частоту запросов.
-  Повторите сборку; при необходимости добавьте `--max-workers=1`. Репозитории IntelliJ Platform стоят в
-  `build.gradle.kts` первыми, а группы `bundled*` и `localIde*` исключены из Maven Central, чтобы виртуальные
-  артефакты локальной IDE не запрашивались по сети.
-- **JetBrains User Agreement.** При первом `runIde` песочница показывает пользовательское соглашение JetBrains,
-  его принимает пользователь. Тесты (`test`) соглашения не требуют.
-- **Прокси.** Если Java получает настройки прокси через `JAVA_TOOL_OPTIONS`, не очищайте эту переменную перед вызовом `gradlew`.
-
-## Первая сборка: на что обратить внимание
-
-Версии IntelliJ Platform Gradle Plugin и Kotlin в `gradle.properties` заданы консервативно. Если ваша
-IDE новее (2025.3 / 2026.x), а сборка падает на этапе конфигурации IntelliJ Platform, поднимите
-`intellijPlatformPluginVersion` до актуальной 2.x и `kotlinVersion` до версии Kotlin stdlib вашей IDE
-(её показывает `docs/compatibility-matrix.md`). После успешной сборки поменяйте статус строки
-в матрице на `build OK`.
+- **HTTP 429 от Maven Central.** Повторите сборку; при необходимости добавьте `--max-workers=1`.
+- **Драйверы без сети.** IDE ищет JAR драйвера в таком порядке: `OPENDATA_DRIVERS_DIR`, `plugins/opendata-db/drivers`
+  дистрибутива, `<config>/opendata/drivers`. Если загрузка не удалась, в ошибке указан точный URL и каталог,
+  куда положить JAR. Можно также задать путь к JAR в поле «JAR драйвера» источника данных.
+- **Прокси.** Если Java получает настройки прокси через `JAVA_TOOL_OPTIONS`, не очищайте эту переменную перед `gradlew`.
+- **Значок `opendata64.exe`.** В ресурсах exe остаётся значок JetBrains: его замена требует `rcedit` и в сборку не входит.
+  Окно, splash и About уже используют брендинг OpenData.
 
 ## CI и релизы
 
-GitHub Actions (`.github/workflows/build.yml`) на каждый push и pull request:
+GitHub Actions (`.github/workflows/build.yml`):
 
-1. скачивает DataGrip (`DATAGRIP_VERSION`) и кэширует его;
-2. поднимает PostgreSQL 16 и выполняет `docker/postgres/init/01-opendata.sql`;
-3. запускает research и проверку совместимости, затем `buildPlugin` и `test`;
-4. публикует артефакты: ZIP плагина и результаты тестов.
+| Job | Что делает |
+|---|---|
+| `linux` | сервисы PostgreSQL 16, ClickHouse 25.8, Dremio OSS 26.0 и их init; `scripts/build.sh` (тесты на всех СУБД, продукт, tar.gz); smoke IDE под Xvfb для PG, ClickHouse и Dremio |
+| `windows` | `scripts/build.ps1 -SkipTests` (продукт и ZIP); `scripts/run.ps1 -Check` (запуск IDE на Windows) |
+| `release` | после зелёных `linux` и `windows` на `main` создаёт GitHub Release `v<version>` с tar.gz, ZIP и ZIP плагина, если такого релиза ещё нет |
 
-**Релиз.** Поднимите `version` в `gradle.properties` и запушьте в `main`. После зелёной сборки workflow сам создаст
-тег `v<version>` и GitHub Release с `opendata-integration-<version>.zip` и описанием из `docs/release-notes.md`.
-
+Чтобы выпустить релиз, поднимите `version` в `gradle.properties` и запушьте в `main`.

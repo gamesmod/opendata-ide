@@ -1,0 +1,86 @@
+<idea-plugin>
+    <id>io.opendata.db</id>
+    <name>OpenData Database</name>
+    <vendor>OpenData</vendor>
+    <description><![CDATA[
+      Открытый DB-слой OpenData IDE: источники данных PostgreSQL, Apache Cloudberry, ClickHouse, Dremio;
+      Database Explorer, SQL-консоль, результаты и редактирование таблиц в штатном DataGrid (intellij.grid).
+    ]]></description>
+
+    <!-- Модель плагинов v2: открытый grid разбит на content-модули; зависимость объявляется на публичные модули. -->
+    <dependencies>
+        <plugin id="intellij.grid.core.plugin"/>
+        <module name="intellij.grid.core.impl"/>
+        <module name="intellij.grid.impl"/>
+    </dependencies>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="OpenData SQL" language="OpenDataSQL" extensions="sql;ddl;dml" fieldName="INSTANCE"
+                  implementationClass="io.opendata.db.lang.SqlFileType"/>
+        <lang.parserDefinition language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlSyntaxHighlighterFactory"/>
+        <lang.commenter language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlCommenter"/>
+        <completion.contributor language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlCompletionContributor"/>
+
+        <applicationService serviceImplementation="io.opendata.db.model.DataSourceStorage"/>
+        <applicationService serviceImplementation="io.opendata.db.drivers.DriverService"/>
+        <applicationService serviceImplementation="io.opendata.db.history.QueryHistory"/>
+        <applicationService serviceImplementation="io.opendata.db.meta.MetadataCache"/>
+        <applicationService serviceImplementation="io.opendata.db.session.DbSessions"/>
+        <projectService serviceImplementation="io.opendata.db.ui.ResultsView"/>
+
+        <toolWindow id="Database" anchor="left" icon="AllIcons.Nodes.DataTables"
+                    factoryClass="io.opendata.db.ui.DatabaseToolWindowFactory"/>
+        <toolWindow id="Results" anchor="bottom" icon="AllIcons.Nodes.DataTables" canCloseContents="true"
+                    factoryClass="io.opendata.db.ui.ResultsToolWindowFactory"/>
+
+        <fileEditorProvider implementation="io.opendata.db.ui.TableDataEditorProvider"/>
+        <editorNotificationProvider implementation="io.opendata.db.ui.ConsoleNotificationProvider"/>
+        <postStartupActivity implementation="io.opendata.db.ui.WorkspaceStartupActivity"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener class="io.opendata.db.ui.WorkspaceLifecycleListener" topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
+
+    <actions>
+        <group id="OpenData.Console" text="SQL" popup="true">
+            <add-to-group group-id="MainMenu" anchor="before" relative-to-action="WindowMenu"/>
+            <action id="OpenData.Console.Execute" class="io.opendata.db.ui.ExecuteStatementAction"
+                    text="Execute" description="Выполнить выражение под кареткой или выделенный текст" icon="AllIcons.Actions.Execute">
+                <keyboard-shortcut keymap="$default" first-keystroke="control ENTER" replace-all="true"/>
+            </action>
+            <action id="OpenData.Console.ExecuteScript" class="io.opendata.db.ui.ExecuteScriptAction"
+                    text="Execute Script" description="Выполнить весь файл" icon="AllIcons.Actions.RunAll">
+                <keyboard-shortcut keymap="$default" first-keystroke="control shift ENTER" replace-all="true"/>
+            </action>
+            <action id="OpenData.Console.Cancel" class="io.opendata.db.ui.CancelQueryAction"
+                    text="Cancel Query" description="Отменить выполняющийся запрос" icon="AllIcons.Actions.Suspend">
+                <keyboard-shortcut keymap="$default" first-keystroke="control F2"/>
+            </action>
+            <separator/>
+            <action id="OpenData.Console.ToggleAutoCommit" class="io.opendata.db.ui.ToggleAutoCommitAction"
+                    text="Toggle Auto-commit / Manual" description="Режим транзакций консоли"/>
+            <action id="OpenData.Console.Commit" class="io.opendata.db.ui.CommitAction" text="Commit" icon="AllIcons.Actions.Commit">
+                <keyboard-shortcut keymap="$default" first-keystroke="control alt shift ENTER"/>
+            </action>
+            <action id="OpenData.Console.Rollback" class="io.opendata.db.ui.RollbackAction" text="Rollback" icon="AllIcons.Actions.Rollback"/>
+            <separator/>
+            <action id="OpenData.Console.History" class="io.opendata.db.ui.QueryHistoryAction" text="Query History">
+                <keyboard-shortcut keymap="$default" first-keystroke="control alt E"/>
+            </action>
+            <action id="OpenData.Console.ChooseDataSource" class="io.opendata.db.ui.ChooseDataSourceAction" text="Choose Data Source…"/>
+            <action id="OpenData.NewDataSource" class="io.opendata.db.ui.NewDataSourceAction" text="New Data Source…" icon="AllIcons.General.Add"/>
+        </group>
+        <group id="OpenData.Console.EditorPopup">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+            <reference ref="OpenData.Console.Execute"/>
+            <reference ref="OpenData.Console.ExecuteScript"/>
+            <separator/>
+        </group>
+        <action id="OpenData.Table.Submit" class="io.opendata.db.ui.SubmitTableChangesAction" text="Submit Changes"
+                description="Применить изменения таблицы" icon="AllIcons.Actions.Commit">
+            <keyboard-shortcut keymap="$default" first-keystroke="control ENTER"/>
+        </action>
+    </actions>
+</idea-plugin>

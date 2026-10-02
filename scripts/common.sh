@@ -84,3 +84,23 @@ gradle_args_base() {
 }
 
 run_gradle() { echo "> gradlew $*"; (cd "$PROJECT_ROOT" && ./gradlew "$@") || fail "Gradle завершился с ошибкой"; }
+
+# --- Открытая платформа (база продукта OpenData IDE) ---------------------------------------------
+
+# Каталог открытой сборки IntelliJ (Apache 2.0) для Linux: OPENDATA_PLATFORM_HOME или загрузка в build/platform/<версия>/linux.
+get_oss_platform() {
+  if [[ -n "${OPENDATA_PLATFORM_HOME:-}" ]]; then
+    [[ -f "$OPENDATA_PLATFORM_HOME/product-info.json" ]] || fail "OPENDATA_PLATFORM_HOME не похож на открытую сборку IntelliJ"
+    PLATFORM="$OPENDATA_PLATFORM_HOME"; return
+  fi
+  local ver; ver="$(gradle_prop ossPlatformVersion)"
+  PLATFORM="$PROJECT_ROOT/build/platform/$ver/linux"
+  [[ -f "$PLATFORM/product-info.json" ]] && return
+  local asset="idea-$ver.tar.gz"
+  local url="https://github.com/JetBrains/intellij-community/releases/download/idea%2F$ver/$asset"
+  mkdir -p "$PLATFORM"
+  echo "Загрузка открытой платформы: $url"
+  curl -fSL "$url" | tar -xz -C "$PLATFORM" --strip-components=1 || fail "Не удалось загрузить $url"
+}
+
+product_dir() { echo "$PROJECT_ROOT/build/product/linux/OpenData-IDE"; }
