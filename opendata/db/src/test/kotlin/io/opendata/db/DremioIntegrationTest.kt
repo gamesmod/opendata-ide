@@ -25,7 +25,7 @@ class DremioIntegrationTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
-        val cfg = DbTestSupport.dremio()
+        val cfg = DbTestSupport.dremio(project)
         if (cfg == null) skip = true else ds = cfg
     }
 

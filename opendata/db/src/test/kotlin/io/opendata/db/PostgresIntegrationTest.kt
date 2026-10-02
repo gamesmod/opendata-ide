@@ -31,7 +31,7 @@ class PostgresIntegrationTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
-        val cfg = DbTestSupport.postgres()
+        val cfg = DbTestSupport.postgres(project)
         if (cfg == null) skip = true else ds = cfg
     }
 
@@ -247,7 +247,7 @@ class PostgresIntegrationTest : BasePlatformTestCase() {
     }
 
     fun testCloudberryModeOnPostgresProtocol() {
-        val cb = DbTestSupport.cloudberry() ?: return
+        val cb = DbTestSupport.cloudberry(project) ?: return
         DbSession(cb.id).use { s ->
             val m = MetadataLoader(s.connection(), cb.kind)
             assertTrue(m.containers().any { it.name == "public" })

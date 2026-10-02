@@ -18,6 +18,7 @@ import com.intellij.ui.dsl.builder.panel
 import io.opendata.db.drivers.DriverService
 import io.opendata.db.model.DataSourceConfig
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import io.opendata.db.model.DbKind
 import io.opendata.db.session.DbSession
 import javax.swing.DefaultComboBoxModel
@@ -26,7 +27,7 @@ import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 
 /** Add / Edit Data Source (ТЗ 11): host, port, database, user, password, URL, драйвер, свойства. */
-class DataSourceDialog(private val project: Project?, initial: DataSourceConfig) : DialogWrapper(project) {
+class DataSourceDialog(private val project: Project, initial: DataSourceConfig) : DialogWrapper(project) {
     val config: DataSourceConfig = initial.copy()
 
     private val kindBox = com.intellij.openapi.ui.ComboBox(DefaultComboBoxModel(DbKind.entries.toTypedArray())).apply {
@@ -38,7 +39,7 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
     private val port = JBTextField(config.port.toString())
     private val database = JBTextField(config.database)
     private val user = JBTextField(config.user)
-    private val password = JBPasswordField().apply { text = DataSourceStorage.getInstance().getPassword(config.id).orEmpty() }
+    private val password = JBPasswordField().apply { text = DataSources.getPassword(config.id).orEmpty() }
     private val url = JBTextField(config.url).apply { emptyText.text = config.effectiveUrl() }
     private val driverJar = TextFieldWithBrowseButton().apply {
         text = config.driverJar
@@ -48,8 +49,16 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
         emptyText.text = "ssl=true; sslmode=require; …"
     }
 
+    private val driverStatus = com.intellij.ui.components.JBLabel()
+
+    private fun refreshDriverStatus() {
+        val k = kindBox.selectedItem as DbKind
+        driverStatus.text = DriverService.getInstance().status(k).summary
+    }
+
     init {
-        title = if (DataSourceStorage.getInstance().find(config.id) == null) "Новый источник данных" else "Источник данных: ${config.name}"
+        refreshDriverStatus()
+        title = if (DataSourceStorage.getInstance(project).find(config.id) == null) "Новый источник данных" else "Источник данных: ${config.name}"
         kindBox.addActionListener { onKindChanged() }
         listOf(host, port, database).forEach { it.document.addDocumentListener(simpleListener { refreshUrlHint() }) }
         init()
@@ -68,11 +77,12 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
         if (database.text == previous.defaultDatabase || database.text.isBlank()) database.text = k.defaultDatabase
         config.kind = k
         refreshUrlHint()
+        refreshDriverStatus()
     }
 
     private fun refreshUrlHint() {
         val k = kindBox.selectedItem as DbKind
-        url.emptyText.text = k.buildUrl(host.text.trim(), port.text.trim().toIntOrNull() ?: k.defaultPort, database.text.trim())
+        url.emptyText.text = io.opendata.db.drivers.DriverSettings.getInstance().buildUrl(k, host.text.trim(), port.text.trim().toIntOrNull() ?: k.defaultPort, database.text.trim())
         url.repaint()
     }
 
@@ -90,7 +100,15 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
         row("JDBC URL:") { cell(url).align(AlignX.FILL).comment("Пусто — URL собирается из полей выше") }
         row("Свойства:") { cell(properties).align(AlignX.FILL).comment("Свойства драйвера: ключ=значение через ';' (SSL и др.)") }
         row("JAR драйвера:") {
-            cell(driverJar).align(AlignX.FILL).comment("Пусто — драйвер из комплекта / загрузка из Maven Central")
+            cell(driverJar).align(AlignX.FILL).comment("Пусто — драйвер из менеджера драйверов")
+        }
+        row("Драйвер:") {
+            cell(driverStatus)
+            link("Менеджер драйверов…") {
+                io.opendata.db.drivers.DriversConfigurable.show(project)
+                refreshDriverStatus()
+                refreshUrlHint()
+            }
         }
         row {
             button("Test Connection") { testConnection() }
@@ -134,7 +152,7 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
 
     override fun doOKAction() {
         apply(config)
-        DataSourceStorage.getInstance().setPassword(config.id, String(password.password).ifEmpty { null })
+        DataSources.setPassword(config.id, String(password.password).ifEmpty { null })
         super.doOKAction()
     }
 
@@ -142,15 +160,15 @@ class DataSourceDialog(private val project: Project?, initial: DataSourceConfig)
 
     companion object {
         /** Показывает диалог; при OK сохраняет источник и возвращает его. */
-        fun edit(project: Project?, initial: DataSourceConfig): DataSourceConfig? {
+        fun edit(project: Project, initial: DataSourceConfig): DataSourceConfig? {
             val d = DataSourceDialog(project, initial)
             if (!d.showAndGet()) return null
-            DataSourceStorage.getInstance().addOrUpdate(d.config)
+            DataSourceStorage.getInstance(project).addOrUpdate(d.config)
             return d.config
         }
 
         @Suppress("unused")
         fun driverState(cfg: DataSourceConfig): String =
-            if (cfg.driverJar.isNotBlank() || DriverService.getInstance().isAvailable(cfg.kind.driver)) "драйвер установлен" else "драйвер будет загружен"
+            if (cfg.driverJar.isNotBlank() || DriverService.getInstance().isAvailable(cfg.kind)) "драйвер установлен" else "драйвер будет загружен"
     }
 }

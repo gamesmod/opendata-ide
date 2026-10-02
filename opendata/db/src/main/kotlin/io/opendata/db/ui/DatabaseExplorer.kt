@@ -34,6 +34,7 @@ import io.opendata.db.meta.MetadataCache
 import io.opendata.db.meta.MetadataLoader
 import io.opendata.db.model.DataSourceConfig
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import io.opendata.db.model.DbKind
 import io.opendata.db.session.DbError
 import io.opendata.db.session.DbSessions
@@ -111,6 +112,16 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
             add(OpenConsoleAction())
             add(OpenDataAction())
             add(ShowDdlAction())
+            addSeparator()
+            add(ExportDataAction())
+            add(ImportDataAction())
+            addSeparator()
+            add(DefaultActionGroup("Ещё", true).apply {
+                templatePresentation.icon = AllIcons.Actions.More
+                add(ExportConnectionsAction()); add(ImportConnectionsAction())
+                addSeparator()
+                add(DriversAction())
+            })
         }
         val toolbar = ActionManager.getInstance().createActionToolbar("OpenDataDatabaseExplorer", actions, true)
         toolbar.targetComponent = tree
@@ -118,11 +129,12 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
         setContent(ScrollPaneFactory.createScrollPane(tree))
         PopupHandler.installPopupMenu(tree, DefaultActionGroup().apply {
             add(OpenConsoleAction()); add(OpenDataAction()); add(ShowDdlAction()); addSeparator()
+            add(ExportDataAction()); add(ImportDataAction()); addSeparator()
             add(RefreshAction()); add(DisconnectAction()); addSeparator()
             add(EditDataSourceAction()); add(DuplicateDataSourceAction()); add(DeleteDataSourceAction())
         }, "OpenDataDatabaseExplorerPopup")
 
-        DataSourceStorage.getInstance().addListener({ ApplicationManager.getApplication().invokeLater { rebuild() } }, this)
+        DataSourceStorage.getInstance(project).addListener({ ApplicationManager.getApplication().invokeLater { rebuild() } }, this)
         rebuild()
     }
 
@@ -131,7 +143,7 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
     fun rebuild() {
         val expanded = TreeUtil.collectExpandedUserObjects(tree).filterIsInstance<ExplorerNode>().toSet()
         root.removeAllChildren()
-        DataSourceStorage.getInstance().dataSources.sortedBy { it.name.lowercase() }.forEach { ds ->
+        DataSourceStorage.getInstance(project).dataSources.sortedBy { it.name.lowercase() }.forEach { ds ->
             root.add(DefaultMutableTreeNode(ExplorerNode(ds.id, null)).apply { add(DefaultMutableTreeNode(LoadingNode)) })
         }
         model.reload()
@@ -143,7 +155,7 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
         }
     }
 
-    private fun dsOf(node: ExplorerNode): DataSourceConfig? = DataSourceStorage.getInstance().find(node.dataSourceId)
+    private fun dsOf(node: ExplorerNode): DataSourceConfig? = DataSourceStorage.getInstance(project).find(node.dataSourceId)
 
     private fun hasChildren(o: DbObject): Boolean = !o.isLeaf
 
@@ -287,8 +299,8 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
         override fun actionPerformed(e: AnActionEvent) {
             val ds = selectedDs() ?: return
             val copy = ds.copy(newId = true).apply { name = "${ds.name} (копия)" }
-            DataSourceStorage.getInstance().getPassword(ds.id)?.let { DataSourceStorage.getInstance().setPassword(copy.id, it) }
-            DataSourceStorage.getInstance().addOrUpdate(copy)
+            DataSources.getPassword(ds.id)?.let { DataSources.setPassword(copy.id, it) }
+            DataSourceStorage.getInstance(project).addOrUpdate(copy)
             selectDataSource(copy.id)
         }
     }
@@ -299,7 +311,7 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
             val ds = selectedDs() ?: return
             if (Messages.showYesNoDialog(project, "Удалить источник данных «${ds.name}»?", "Удаление", null) != Messages.YES) return
             DbSessions.getInstance().disconnect(ds.id)
-            DataSourceStorage.getInstance().remove(ds.id)
+            DataSourceStorage.getInstance(project).remove(ds.id)
         }
     }
 
@@ -367,15 +379,94 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
         }
     }
 
+    private fun isContainer(o: DbObject?) = o != null && (o.kind == DbObjectKind.SCHEMA || o.kind == DbObjectKind.CATALOG)
+
+    /** Экспорт данных таблицы или представления в файл. */
+    private inner class ExportDataAction : ExplorerAction("Экспорт данных…", AllIcons.ToolbarDecorator.Export) {
+        override fun update(e: AnActionEvent) {
+            val k = selectedNode()?.obj?.kind
+            e.presentation.isEnabled = k == DbObjectKind.TABLE || k == DbObjectKind.VIEW
+        }
+        override fun actionPerformed(e: AnActionEvent) {
+            val n = selectedNode() ?: return
+            io.opendata.db.data.DataTransferUi.exportTable(project, dsOf(n) ?: return, n.obj ?: return)
+        }
+    }
+
+    /** Импорт CSV/TSV: в выбранную таблицу или в новую таблицу выбранной схемы/базы. */
+    private inner class ImportDataAction : ExplorerAction("Импорт данных…", AllIcons.ToolbarDecorator.Import) {
+        override fun update(e: AnActionEvent) {
+            val n = selectedNode()
+            val o = n?.obj
+            e.presentation.isEnabled = n != null && dsOf(n)?.kind != DbKind.DREMIO && (o?.kind == DbObjectKind.TABLE || isContainer(o))
+        }
+        override fun actionPerformed(e: AnActionEvent) {
+            val n = selectedNode() ?: return
+            val o = n.obj ?: return
+            val ds = dsOf(n) ?: return
+            val treeNode = selectedTreeNode() ?: return
+            // После импорта в новую таблицу перечитываем схему, чтобы таблица появилась в дереве.
+            if (o.kind == DbObjectKind.TABLE) io.opendata.db.data.DataTransferUi.import(project, ds, o, null)
+            else io.opendata.db.data.DataTransferUi.import(project, ds, null, o) { MetadataCache.getInstance().invalidate(ds.id); resetNode(treeNode) }
+        }
+    }
+
+    /** Подключения проекта в XML-файл (без паролей) — чтобы перенести в другой проект или передать коллеге. */
+    private inner class ExportConnectionsAction : ExplorerAction("Экспорт подключений…", AllIcons.ToolbarDecorator.Export) {
+        override fun actionPerformed(e: AnActionEvent) {
+            val storage = DataSourceStorage.getInstance(project)
+            if (storage.dataSources.isEmpty()) { Messages.showInfoMessage(project, "В проекте нет подключений.", "Экспорт подключений"); return }
+            val wrapper = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance().createSaveFileDialog(
+                com.intellij.openapi.fileChooser.FileSaverDescriptor("Экспорт подключений", "Пароли не сохраняются", "xml"), project)
+            val target = wrapper.save(project.basePath?.let { java.nio.file.Path.of(it) }, "opendata-connections.xml") ?: return
+            java.nio.file.Files.writeString(target.file.toPath(), ConnectionsTransfer.toXml(storage.dataSources))
+            Messages.showInfoMessage(project, "Сохранено подключений: ${storage.dataSources.size}\n${target.file}", "Экспорт подключений")
+        }
+    }
+
+    private inner class ImportConnectionsAction : ExplorerAction("Импорт подключений…", AllIcons.ToolbarDecorator.Import) {
+        override fun actionPerformed(e: AnActionEvent) {
+            val vf = com.intellij.openapi.fileChooser.FileChooser.chooseFile(
+                com.intellij.openapi.fileChooser.FileChooserDescriptorFactory.createSingleFileDescriptor("xml").withTitle("Файл подключений"), project, null) ?: return
+            val result = runCatching { ConnectionsTransfer.importInto(DataSourceStorage.getInstance(project), String(vf.contentsToByteArray(), Charsets.UTF_8)) }
+            result.onSuccess { Messages.showInfoMessage(project, "Добавлено подключений: $it. Пароли нужно ввести заново.", "Импорт подключений") }
+                .onFailure { Messages.showErrorDialog(project, "Не удалось прочитать файл: ${it.message}", "Импорт подключений") }
+        }
+    }
+
+    private inner class DriversAction : ExplorerAction("Драйверы…", AllIcons.General.Settings) {
+        override fun actionPerformed(e: AnActionEvent) = io.opendata.db.drivers.DriversConfigurable.show(project)
+    }
+
     @Suppress("unused")
     private fun disposeLater(d: com.intellij.openapi.Disposable) = Disposer.register(this, d)
 }
 
-/** Глобальное действие «Новый источник данных» (меню File и Welcome). */
+/** «Новый источник данных» в текущем проекте (меню SQL). */
 class NewDataSourceAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = e.project != null
+    }
+
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project
+        val project = e.project ?: return
         DataSourceDialog.edit(project, DataSourceConfig().apply { name = "PostgreSQL localhost" })
+    }
+}
+
+/** Экспорт/импорт подключений: тот же XML, что в `.idea/opendata-datasources.xml`, без паролей. */
+object ConnectionsTransfer {
+    fun toXml(list: List<DataSourceConfig>): String {
+        val state = DataSourceStorage.State().apply { dataSources = list.map { it.copy() }.toMutableList() }
+        val element = com.intellij.util.xmlb.XmlSerializer.serialize(state)
+        return com.intellij.openapi.util.JDOMUtil.write(element) + "\n"
+    }
+
+    /** Добавляет подключения из XML; при совпадении id создаётся копия с новым id. Возвращает число добавленных. */
+    fun importInto(storage: DataSourceStorage, xml: String): Int {
+        val state = com.intellij.util.xmlb.XmlSerializer.deserialize(com.intellij.openapi.util.JDOMUtil.load(xml), DataSourceStorage.State::class.java)
+        state.dataSources.forEach { ds -> storage.addOrUpdate(if (storage.find(ds.id) != null) ds.copy(newId = true) else ds) }
+        return state.dataSources.size
     }
 }

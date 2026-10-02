@@ -26,7 +26,7 @@ class ClickHouseIntegrationTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
-        val cfg = DbTestSupport.clickhouse()
+        val cfg = DbTestSupport.clickhouse(project)
         if (cfg == null) skip = true else ds = cfg
     }
 

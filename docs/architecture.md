@@ -24,23 +24,24 @@
 
 ```text
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│ Открытая IntelliJ Platform 2026.2.3 (IC-262.10968.63, JBR 25)                   │
-│   Editor · PSI · VFS · Actions · Tool Windows · PasswordSafe · Progress/Tasks  │
+│ Открытая IntelliJ Platform 2026.2.3 (IC-262.10968.63, JBR 25)                 │
+│   Editor · PSI · VFS · Actions · Tool Windows · PasswordSafe · Progress/Tasks │
 ├───────────────────────────────────────────────────────────────────────────────┤
-│ intellij.grid.core.plugin (+ platform-structureView-plugin, его зависимость)   │
-│   DataGrid · DataGridListModel · GridMutator · GridPagingModel · CSV/копирование│
+│ intellij.grid.core.plugin (+ platform-structureView-plugin, его зависимость)  │
+│   DataGrid · DataGridListModel · GridMutator · GridPagingModel · копирование  │
 ├───────────────────────────────────────────────────────────────────────────────┤
-│ opendata-db (io.opendata.db)                                                   │
-│   model/    DbKind, DataSourceConfig, DataSourceStorage (+ PasswordSafe)       │
-│   drivers/  DriverService: изолированный URLClassLoader, загрузка + SHA-256    │
-│   session/  DbSession, DbSessions, QueryExecutor, SqlSplitter, DbError         │
-│   meta/     MetadataLoader, MetadataCache, DdlGenerator                        │
-│   lang/     SQL: FileType, Lexer, Highlighter, Commenter, Completion           │
-│   grid/     ResultGrids, TableDataController, TablePager, TableMutator         │
-│   ui/       Database Explorer, Results, Console, DataSourceDialog,             │
-│             TableDataEditor, Workspace, SmokeTest                              │
+│ opendata-db (io.opendata.db)                                                  │
+│   model/    DbKind, DataSourceConfig, DataSourceStorage (проект), PasswordSafe│
+│   drivers/  DriverService, DriverSettings, DriversConfigurable (менеджер)     │
+│   data/     DataExporter, DataImporter, CsvReader, диалоги импорта/экспорта   │
+│   session/  DbSession, DbSessions, QueryExecutor, SqlSplitter, DbError        │
+│   meta/     MetadataLoader, MetadataCache, DdlGenerator                       │
+│   lang/     SQL: FileType, Lexer, Highlighter, Commenter, Completion          │
+│   grid/     ResultGrids, TableDataController, TablePager, TableMutator        │
+│   ui/       Database Explorer, Results, Console, DataSourceDialog,            │
+│             TableDataEditor, Workspace, SmokeTest                             │
 ├───────────────────────────────────────────────────────────────────────────────┤
-│ tools/product/AssembleProduct.java — состав плагинов, брендинг, launcher, ZIP  │
+│ tools/product/AssembleProduct.java — состав плагинов, брендинг, launcher, ZIP │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,6 +67,51 @@
 
 IDE работает без пользовательских проектов: при старте открывается служебная папка `~/OpenData`, которая
 сразу помечается доверенной (`TrustedProjects`). Источники данных, история и настройки хранятся на уровне приложения.
+
+## Проекты и подключения
+
+Как в DataGrip, подключения принадлежат проекту. Проект — это обычная папка:
+
+| Что | Где хранится | Компонент |
+|---|---|---|
+| Подключения | `<проект>/.idea/opendata-datasources.xml` | `DataSourceStorage` (сервис проекта, `PersistentStateComponent`) |
+| Пароли | хранилище паролей ОС через `PasswordSafe`, ключ — id подключения | `DataSources.getPassword/setPassword` |
+| SQL-консоли | `<проект>/.idea/opendata/consoles/<id подключения>/console*.sql` | `ConsoleFiles` |
+| Настройки драйверов | `<config>/options/opendata-drivers.xml` (общие для всех проектов) | `DriverSettings` |
+| Загруженные драйверы | `<config>/opendata/drivers` | `DriverService` |
+
+Id подключения — UUID, поэтому код без контекста проекта (сессии, completion) находит подключение по id среди открытых
+проектов (`DataSources.find`). При первом запуске (нет недавних проектов) открывается проект по умолчанию `~/OpenData`.
+Подключения версии 0.2.0, которые хранились на уровне IDE, при первом открытии проекта переносятся в него
+(`LegacyDataSourcesMigration`), и пользователь получает уведомление. Изменения подключений сразу записываются
+на диск (`project.scheduleSave()`), поэтому `.idea/opendata-datasources.xml` можно хранить в VCS вместе с проектом.
+
+## Менеджер драйверов
+
+Для каждой СУБД `DriverSettings` хранит переопределения. Пустое поле означает значение по умолчанию из `DbKind`:
+
+- версия артефакта Maven: встроенная проверяется закреплённой SHA-256, другая — по `.sha1` из Maven Central;
+- свои JAR вместо Maven;
+- класс драйвера;
+- шаблон URL `{host}`, `{port}`, `{database}`;
+- свойства по умолчанию, которые дополняют встроенные.
+
+Порядок поиска JAR: поле «JAR драйвера» подключения → свои JAR менеджера → `OPENDATA_DRIVERS_DIR` → комплект IDE
+(`plugins/opendata-db/drivers`) → `<config>/opendata/drivers` → загрузка. Драйвер каждой СУБД загружается
+в отдельный `URLClassLoader`.
+
+## Импорт и экспорт
+
+- **Экспорт** (`DataExporter`): таблица или представление выгружаются потоково через отдельное соединение
+  (`fetchSize` 1000; в PostgreSQL курсор работает вне auto-commit). Результат консоли выгружается из уже загруженных
+  строк, а если он был обрезан лимитом и это запрос на чтение, запрос выполняется повторно и выгружается полностью.
+  Форматы: CSV и TSV (RFC 4180), JSON, SQL INSERT (литералы с учётом СУБД), Markdown.
+- **Импорт** (`DataImporter`): CSV и TSV (кавычки, переводы строк внутри значения, BOM). Колонки сопоставляются
+  по заголовку без учёта регистра, без заголовка — по порядку. Числа и логические значения приводятся к типу
+  колонки, остальное передаётся строкой (PostgreSQL приводит тип сам благодаря `stringtype=unspecified`).
+  Вставка идёт пакетами по 1000 строк. В СУБД с транзакциями импорт атомарный. Можно создать новую таблицу
+  с текстовыми колонками: `TEXT` или `Nullable(String)` + `MergeTree` в ClickHouse. Dremio подключён только для чтения.
+- **Подключения**: экспорт и импорт XML того же формата, что `.idea/opendata-datasources.xml`, без паролей.
 
 ## Поддержка СУБД
 

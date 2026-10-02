@@ -32,6 +32,7 @@ import io.opendata.db.grid.ResultGrids
 import io.opendata.db.grid.TableDataController
 import io.opendata.db.meta.DbObject
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import io.opendata.db.session.DbSessions
 import java.awt.BorderLayout
 import java.awt.FlowLayout
@@ -220,4 +221,4 @@ class SubmitTableChangesAction : AnAction(), DumbAware {
 }
 
 @Suppress("unused")
-private fun dsName(id: String) = DataSourceStorage.getInstance().find(id)?.name ?: id
+private fun dsName(id: String) = DataSources.find(id)?.name ?: id

@@ -48,11 +48,34 @@ class ResultsView(private val project: Project) {
         }
         private val gridDisposables = ArrayList<Disposable>()
         private val time = SimpleDateFormat("HH:mm:ss")
+        private var shown: List<StatementResult.Rows> = emptyList()
+        private var dataSourceId: String? = null
+        private var project: Project? = null
 
         init {
             tabs.addTab("Output", JBScrollPane(log))
             add(tabs, BorderLayout.CENTER)
+            val actions = com.intellij.openapi.actionSystem.DefaultActionGroup(ExportResultAction())
+            val toolbar = com.intellij.openapi.actionSystem.ActionManager.getInstance().createActionToolbar("OpenDataResults", actions, false)
+            toolbar.targetComponent = this
+            add(toolbar.component, BorderLayout.WEST)
             Disposer.register(parent, this)
+        }
+
+        /** Результат на выбранной вкладке (вкладка 0 — Output). */
+        val selectedResult: StatementResult.Rows? get() = shown.getOrNull(tabs.selectedIndex - 1)
+
+        private inner class ExportResultAction : com.intellij.openapi.project.DumbAwareAction(
+            "Экспорт результата…", "Сохранить результат в CSV, TSV, JSON, SQL INSERT или Markdown", com.intellij.icons.AllIcons.ToolbarDecorator.Export,
+        ) {
+            override fun getActionUpdateThread() = com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+            override fun update(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                e.presentation.isEnabled = selectedResult != null
+            }
+            override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                val r = selectedResult ?: return
+                io.opendata.db.data.DataTransferUi.exportResult(project ?: e.project ?: return, dataSourceId, r)
+            }
         }
 
         fun log(line: String) {
@@ -61,7 +84,10 @@ class ResultsView(private val project: Project) {
         }
 
         /** Заменяет предыдущие результаты новыми (по одной вкладке на result set). */
-        fun showResults(project: Project, results: List<StatementResult>): List<DataGrid> {
+        fun showResults(project: Project, results: List<StatementResult>, dataSourceId: String? = null): List<DataGrid> {
+            this.project = project
+            this.dataSourceId = dataSourceId
+            shown = results.filterIsInstance<StatementResult.Rows>()
             while (tabs.tabCount > 1) tabs.removeTabAt(1)
             gridDisposables.forEach { Disposer.dispose(it) }
             gridDisposables.clear()

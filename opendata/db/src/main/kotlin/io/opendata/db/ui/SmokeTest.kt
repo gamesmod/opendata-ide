@@ -10,6 +10,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import io.opendata.db.meta.DbObject
 import io.opendata.db.meta.DbObjectKind
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -25,7 +26,7 @@ import javax.swing.tree.TreePath
  */
 object SmokeTest {
     suspend fun run(project: Project, dsId: String, report: StringBuilder) {
-        val ds = DataSourceStorage.getInstance().find(dsId) ?: run { report.appendLine("smoke.ds=NOT_FOUND"); return }
+        val ds = DataSourceStorage.getInstance(project).find(dsId) ?: run { report.appendLine("smoke.ds=NOT_FOUND"); return }
         report.appendLine("smoke.ds=${ds.name} (${ds.kind.displayName})")
 
         // 1. Database Explorer: раскрыть источник данных (introspection в фоне).

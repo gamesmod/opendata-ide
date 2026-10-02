@@ -15,8 +15,10 @@
 
 | Функция | Реализация |
 |---|---|
-| Источники данных: Add / Edit / Duplicate / Delete, Test Connection, драйвер, host/port/db/user, JDBC URL, свойства | `opendata-db`, пароли в `PasswordSafe` |
-| Драйверы JDBC | PostgreSQL входит в комплект; ClickHouse и Arrow Flight SQL (Dremio) загружаются из Maven Central с проверкой SHA-256 или берутся из локального каталога |
+| Проекты | проект — папка; подключения хранятся в её `.idea/opendata-datasources.xml`, консоли — в `.idea/opendata/consoles`. New Project на Welcome-экране, File → Новый проект… |
+| Подключения (в проекте) | Add / Edit / Duplicate / Delete, Test Connection, host/port/db/user, JDBC URL, свойства, свой JAR; экспорт и импорт подключений (XML без паролей); пароли в `PasswordSafe` |
+| Менеджер драйверов | Settings → Tools → OpenData: драйверы: состояние, версия из Maven Central, свои JAR, класс драйвера, шаблон URL, свойства по умолчанию; загрузка, проверка, удаление. PostgreSQL в комплекте, ClickHouse и Arrow Flight SQL (Dremio) загружаются с проверкой контрольной суммы |
+| Импорт и экспорт данных | экспорт таблицы целиком (потоково) и результата запроса в CSV, TSV, JSON, SQL INSERT, Markdown; импорт CSV/TSV в существующую или новую таблицу (в PostgreSQL и Cloudberry — одной транзакцией) |
 | Database Explorer | схемы, таблицы, представления, функции, последовательности, типы; колонки, ключи, индексы, триггеры, ограничения |
 | SQL Console | подсветка, completion по метаданным (таблицы, колонки, алиасы), Ctrl+Enter, скрипт, отмена, ошибки с позицией, Auto-commit / Commit / Rollback, история запросов |
 | Результаты | открытый JetBrains **DataGrid**: выделение, копирование, сортировка, фильтр, ширина колонок, NULL, даты, JSON, LOB |

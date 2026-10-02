@@ -5,6 +5,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import io.opendata.db.drivers.DriverService
 import io.opendata.db.model.DataSourceConfig
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import java.sql.Connection
 import java.sql.Statement
 import java.util.concurrent.atomic.AtomicReference
@@ -22,7 +23,7 @@ class DbSession(dataSourceId: String) : Disposable {
     private val running = AtomicReference<Statement?>()
 
     val config: DataSourceConfig
-        get() = DataSourceStorage.getInstance().find(dataSourceId)
+        get() = DataSources.find(dataSourceId)
             ?: error("Источник данных не найден: $dataSourceId")
 
     /** true — autocommit, false — ручной режим (Commit/Rollback). */
@@ -49,7 +50,7 @@ class DbSession(dataSourceId: String) : Disposable {
     fun connection(indicator: ProgressIndicator? = null): Connection {
         connection?.takeIf { !it.isClosed }?.let { return it }
         val cfg = config
-        val c = DriverService.getInstance().connect(cfg, DataSourceStorage.getInstance().getPassword(cfg.id), indicator)
+        val c = DriverService.getInstance().connect(cfg, DataSources.getPassword(cfg.id), indicator)
         if (cfg.kind.supportsTransactions) runCatching { c.autoCommit = autoCommit }
         connection = c
         return c

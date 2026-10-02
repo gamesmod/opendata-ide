@@ -6,6 +6,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import io.opendata.db.drivers.DriverService
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import java.util.concurrent.ConcurrentHashMap
 
 /** Снимок метаданных для completion: таблицы и колонки. Заполняется в фоне, completion только читает. */
@@ -27,8 +28,8 @@ class MetadataCache {
         if (tables.containsKey(dataSourceId) || !loading.add(dataSourceId)) return
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val cfg = DataSourceStorage.getInstance().find(dataSourceId) ?: return@executeOnPooledThread
-                DriverService.getInstance().connect(cfg, DataSourceStorage.getInstance().getPassword(cfg.id), null).use { c ->
+                val cfg = DataSources.find(dataSourceId) ?: return@executeOnPooledThread
+                DriverService.getInstance().connect(cfg, DataSources.getPassword(cfg.id), null).use { c ->
                     val loader = MetadataLoader(c, cfg.kind)
                     val result = ArrayList<TableInfo>()
                     for (container in loader.containers()) {

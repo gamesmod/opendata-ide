@@ -19,6 +19,7 @@ import io.opendata.db.history.HistoryEntry
 import io.opendata.db.history.QueryHistory
 import io.opendata.db.meta.MetadataCache
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import io.opendata.db.session.DbSession
 import io.opendata.db.session.DbSessions
 import io.opendata.db.session.SqlChunk
@@ -36,7 +37,7 @@ object ConsoleRunner {
 
     fun session(file: VirtualFile): DbSession? {
         val dsId = ConsoleFiles.dataSourceIdOf(file) ?: return null
-        DataSourceStorage.getInstance().find(dsId) ?: return null
+        DataSources.find(dsId) ?: return null
         return DbSessions.getInstance().get(sessionKey(file), dsId)
     }
 
@@ -87,7 +88,7 @@ object ConsoleRunner {
                     }
                     ApplicationManager.getApplication().invokeLater {
                         if (!project.isDisposed) {
-                            if (all.any { it is StatementResult.Rows }) panel.showResults(project, all) else panel.showOutput()
+                            if (all.any { it is StatementResult.Rows }) panel.showResults(project, all, ds.id) else panel.showOutput()
                             EditorNotifications.getInstance(project).updateNotifications(file)
                         }
                     }

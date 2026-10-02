@@ -20,6 +20,7 @@ import io.opendata.db.history.QueryHistory
 import io.opendata.db.lang.SqlFileType
 import io.opendata.db.model.DataSourceConfig
 import io.opendata.db.model.DataSourceStorage
+import io.opendata.db.model.DataSources
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.function.Function
@@ -126,7 +127,7 @@ class ChooseDataSourceAction : AnAction(), DumbAware {
 
     companion object {
         fun choose(project: Project, file: VirtualFile) {
-            val list = DataSourceStorage.getInstance().dataSources
+            val list = DataSourceStorage.getInstance(project).dataSources
             if (list.isEmpty()) {
                 Messages.showInfoMessage(project, "Сначала создайте источник данных в окне Database.", "OpenData")
                 return
@@ -188,7 +189,7 @@ class ConsoleNotificationProvider : EditorNotificationProvider, DumbAware {
         return Function { fileEditor ->
             val panel = EditorNotificationPanel(fileEditor, EditorNotificationPanel.Status.Info)
             val dsId = ConsoleFiles.dataSourceIdOf(file)
-            val ds = dsId?.let { DataSourceStorage.getInstance().find(it) }
+            val ds = dsId?.let { DataSources.find(it) }
             if (ds == null) {
                 panel.text = "Источник данных не выбран"
                 panel.createActionLabel("Выбрать…") { ChooseDataSourceAction.choose(project, file) }
@@ -217,8 +218,17 @@ class ConsoleNotificationProvider : EditorNotificationProvider, DumbAware {
 
 object Consoles {
     fun open(project: Project, ds: DataSourceConfig, newConsole: Boolean = false) {
-        val file = if (newConsole) ConsoleFiles.nextConsoleFile(ds) else ConsoleFiles.consoleFile(ds)
+        val file = if (newConsole) ConsoleFiles.nextConsoleFile(project, ds) else ConsoleFiles.consoleFile(project, ds)
         FileEditorManager.getInstance(project).openFile(file, true)
         io.opendata.db.meta.MetadataCache.getInstance().prefetch(ds.id)
     }
+}
+
+/**
+ * Ctrl+Enter в SQL-консоли и редакторе таблицы конфликтует со штатным «Split Line» (а в некоторых раскладках
+ * replace-all не снимает его привязку). Промоутер ставит действия OpenData первыми — если они доступны в контексте.
+ */
+class ConsoleActionPromoter : com.intellij.openapi.actionSystem.ActionPromoter {
+    override fun promote(actions: List<AnAction>, context: com.intellij.openapi.actionSystem.DataContext): List<AnAction> =
+        actions.filter { it is ExecuteStatementAction || it is ExecuteScriptAction || it is SubmitTableChangesAction || it is CommitAction }
 }

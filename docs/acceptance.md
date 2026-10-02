@@ -8,7 +8,7 @@
 
 Результаты 2026-10-02 (Linux, платформа IC-262.10968.63):
 
-- тесты: 25/25 на PostgreSQL 16, в режиме Cloudberry, на ClickHouse 26.10 и Dremio OSS 26.0.5, включая загрузку драйверов из Maven Central (в CI);
+- тесты: 33/33 на PostgreSQL 16, в режиме Cloudberry, на ClickHouse 26.10 и Dremio OSS 26.0.5, включая загрузку драйверов из Maven Central (в CI);
 - smoke Linux-продукта: `SMOKE=OK` для PostgreSQL, Cloudberry (режим PG), ClickHouse и Dremio (в CI — PG, ClickHouse, Dremio с загрузкой драйверов);
 - Windows: ZIP собирается, IDE запускается в CI (`run.ps1 -Check` → `RESULT=OK`); smoke с СУБД на Windows не выполнялся.
 
@@ -50,6 +50,24 @@
 | Транзакции | ✅ | ✅ | нет (СУБД) | нет (СУБД) |
 | DDL | ✅ `testDdl` | ✅ | ✅ `testIntrospectionAndDdl` | ✅ представления (`testQueryAndViewDdl`) |
 | smoke IDE | ✅ | ✅ | ✅ | ✅ |
+
+## Версия 0.3.0: проекты, драйверы, импорт и экспорт
+
+| Проверка | Тест | Проверено в UI (Linux, Xvfb) |
+|---|---|---|
+| Подключения хранятся в проекте, id ищется среди открытых проектов | `testDataSourcesBelongToProject` | 4 подключения в `~/OpenData/.idea/opendata-datasources.xml` |
+| Перенос подключений 0.2.0 в проект | — | при первом открытии: файл уровня IDE удалён, уведомление показано |
+| Новый проект | — | Welcome → New Project → проект с пустым окном Database |
+| Консоли в проекте | `testConsoleFilesLiveInProject` | `.idea/opendata/consoles/<id>/console.sql` |
+| Ctrl+Enter выполняет запрос (а не разбивает строку) | — | ✅ после `ConsoleActionPromoter` |
+| Менеджер драйверов: переопределения, версия, свои JAR | `testDriverSettingsOverrideDefaults` | Settings → Tools → OpenData: драйверы; «Проверить» для ClickHouse |
+| Загрузка драйверов с проверкой контрольной суммы | `testDownloadAllDrivers` (CI) | — |
+| Форматы CSV/TSV/JSON/SQL INSERT/Markdown, разбор CSV | `testWritersAndCsvRoundTrip`, `testConvertByColumnType` | — |
+| Экспорт таблицы и импорт в новую таблицу, атомарность | `testPostgresExportImport` | `users` → CSV → новая таблица `users_copy` (2 строки), дерево обновилось |
+| ClickHouse: экспорт JSON, импорт в существующую и новую таблицу | `testClickHouseExportImport` | — |
+| Dremio: экспорт | `testDremioExport` | — |
+| Экспорт результата консоли | — | Results → «Экспорт результата…» → 100 строк в CSV |
+| Экспорт/импорт подключений (XML без паролей) | `testDataSourcesBelongToProject` | — |
 
 Cloudberry проверен на PostgreSQL в режиме совместимости (`testCloudberryModeOnPostgresProtocol`). На настоящем
 кластере Apache Cloudberry стоит отдельно проверить DDL с `DISTRIBUTED BY` (см. `docs/databases.md`).

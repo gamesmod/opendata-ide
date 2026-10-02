@@ -22,7 +22,8 @@
         <lang.commenter language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlCommenter"/>
         <completion.contributor language="OpenDataSQL" implementationClass="io.opendata.db.lang.SqlCompletionContributor"/>
 
-        <applicationService serviceImplementation="io.opendata.db.model.DataSourceStorage"/>
+        <projectService serviceImplementation="io.opendata.db.model.DataSourceStorage"/>
+        <applicationService serviceImplementation="io.opendata.db.model.LegacyDataSourceStorage"/>
         <applicationService serviceImplementation="io.opendata.db.drivers.DriverService"/>
         <applicationService serviceImplementation="io.opendata.db.history.QueryHistory"/>
         <applicationService serviceImplementation="io.opendata.db.meta.MetadataCache"/>
@@ -37,6 +38,11 @@
         <fileEditorProvider implementation="io.opendata.db.ui.TableDataEditorProvider"/>
         <editorNotificationProvider implementation="io.opendata.db.ui.ConsoleNotificationProvider"/>
         <postStartupActivity implementation="io.opendata.db.ui.WorkspaceStartupActivity"/>
+        <notificationGroup id="OpenData" displayType="BALLOON"/>
+        <actionPromoter implementation="io.opendata.db.ui.ConsoleActionPromoter"/>
+        <applicationService serviceImplementation="io.opendata.db.drivers.DriverSettings"/>
+        <applicationConfigurable parentId="tools" id="opendata.drivers" displayName="OpenData: драйверы"
+                                 instance="io.opendata.db.drivers.DriversConfigurable"/>
     </extensions>
 
     <applicationListeners>
@@ -44,6 +50,10 @@
     </applicationListeners>
 
     <actions>
+        <action id="OpenData.NewProject" class="io.opendata.db.ui.NewProjectAction" text="Новый проект…"
+                description="Создать проект OpenData: подключения и консоли хранятся в папке проекта" icon="AllIcons.General.Add">
+            <add-to-group group-id="FileOpenGroup" anchor="first"/>
+        </action>
         <group id="OpenData.Console" text="SQL" popup="true">
             <add-to-group group-id="MainMenu" anchor="before" relative-to-action="WindowMenu"/>
             <action id="OpenData.Console.Execute" class="io.opendata.db.ui.ExecuteStatementAction"
@@ -71,6 +81,8 @@
             </action>
             <action id="OpenData.Console.ChooseDataSource" class="io.opendata.db.ui.ChooseDataSourceAction" text="Choose Data Source…"/>
             <action id="OpenData.NewDataSource" class="io.opendata.db.ui.NewDataSourceAction" text="New Data Source…" icon="AllIcons.General.Add"/>
+            <action id="OpenData.Drivers" class="io.opendata.db.drivers.ManageDriversAction" text="Драйверы…"
+                    description="Менеджер драйверов: версии, свои JAR, класс, шаблон URL, свойства"/>
         </group>
         <group id="OpenData.Console.EditorPopup">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>

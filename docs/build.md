@@ -71,9 +71,9 @@
 
 `run.* --smoke` запускает IDE с `-Dopendata.smoke=<id>`. Через настоящие UI-компоненты IDE раскрывает
 источник в Database Explorer, выполняет запрос из консоли и проверяет строки в DataGrid, затем открывает
-редактор таблицы. Отчёт пишется в `build/poc/diagnostics.txt`, успех — строка `SMOKE=OK`. Источник данных
-должен уже существовать в настройках IDE. Как CI создаёт его файлом
-`~/.config/OpenData/OpenData2026.2/options/opendata-datasources.xml`, видно в `.github/workflows/build.yml`.
+редактор таблицы. Отчёт пишется в `build/poc/diagnostics.txt`, успех — строка `SMOKE=OK`. Подключение
+должно уже существовать в проекте по умолчанию: CI создаёт файл `~/OpenData/.idea/opendata-datasources.xml`
+(см. `.github/workflows/build.yml`).
 На Linux без дисплея запускайте через `xvfb-run`.
 
 ## Проверенная конфигурация
@@ -85,7 +85,7 @@
 | Kotlin | 2.4.20 |
 | Gradle | 9.8.0 |
 | JDK сборки | 21 |
-| Результат | тесты 25/25 (PostgreSQL 16, режим Cloudberry, ClickHouse 26.10, Dremio OSS 26.0.5); smoke Linux-продукта OK для всех четырёх СУБД |
+| Результат | тесты 33/33 (PostgreSQL 16, режим Cloudberry, ClickHouse 26.10, Dremio OSS 26.0.5); smoke Linux-продукта OK для всех четырёх СУБД |
 
 ### Известные особенности
 

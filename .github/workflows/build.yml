@@ -92,10 +92,11 @@ jobs:
       - name: Smoke test of the assembled IDE (Xvfb)
         run: |
           sudo apt-get install -y -q xvfb >/dev/null
-          cfg="$HOME/.config/OpenData/OpenData2026.2/options"
+          # Подключения хранятся в проекте: проект по умолчанию ~/OpenData открывается при первом запуске.
+          cfg="$HOME/OpenData/.idea"
           mkdir -p "$cfg"
           cat > "$cfg/opendata-datasources.xml" <<'EOF'
-          <application>
+          <project version="4">
             <component name="OpenDataDataSources">
               <dataSources>
                 <data-source>
@@ -123,7 +124,7 @@ jobs:
                 </data-source>
               </dataSources>
             </component>
-          </application>
+          </project>
           EOF
           xvfb-run -a -s '-screen 0 1600x1000x24' bash scripts/run.sh --smoke pg-local public.opendata_test
           OPENDATA_SMOKE_SQL="SELECT number AS id, toString(number) AS value FROM numbers(100)" \
