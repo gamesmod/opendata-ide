@@ -64,8 +64,11 @@ enum class DbKind(
         urlTemplate.replace("{host}", host).replace("{port}", port.toString()).replace("{database}", database)
 }
 
-/** JAR из Maven Central. */
-data class MavenJar(val group: String, val artifact: String, val version: String, val classifier: String? = null) {
+/**
+ * JAR из Maven Central. [sha256] закреплён в коде: файлы `.sha256` есть в Maven Central не у всех артефактов
+ * (например, у slf4j и Arrow их нет), а закреплённая сумма ещё и защищает от подмены зеркала.
+ */
+data class MavenJar(val group: String, val artifact: String, val version: String, val classifier: String? = null, val sha256: String) {
     val fileName: String get() = "$artifact-$version${classifier?.let { "-$it" } ?: ""}.jar"
 
     fun url(base: String = "https://repo.maven.apache.org/maven2"): String =
@@ -77,14 +80,14 @@ data class MavenJar(val group: String, val artifact: String, val version: String
  * (облегчённый дистрибутив), JAR PostgreSQL входит в комплект IDE.
  */
 enum class DriverArtifact(vararg jars: MavenJar) {
-    POSTGRESQL(MavenJar("org.postgresql", "postgresql", "42.7.13")),
+    POSTGRESQL(MavenJar("org.postgresql", "postgresql", "42.7.13", sha256 = "6e0e4cc2d8cae902084f8a2b18728b073a6fd9d1f87c9d8bff8f298c18185b93")),
     CLICKHOUSE(
-        MavenJar("com.clickhouse", "clickhouse-jdbc", "0.10.0", "all"),
+        MavenJar("com.clickhouse", "clickhouse-jdbc", "0.10.0", "all", sha256 = "d83736e24306e11929b0cf81b3306ae903c6f51c735c509ad5680c88640d99ce"),
         // В "-all" не входит SLF4J API; nop-реализация глушит логирование драйвера.
-        MavenJar("org.slf4j", "slf4j-api", "2.0.17"),
-        MavenJar("org.slf4j", "slf4j-nop", "2.0.17"),
+        MavenJar("org.slf4j", "slf4j-api", "2.0.17", sha256 = "7b751d952061954d5abfed7181c1f645d336091b679891591d63329c622eb832"),
+        MavenJar("org.slf4j", "slf4j-nop", "2.0.17", sha256 = "3716f83649ec66161a2edefd4f49df34d1dd1c51cdcf941996c6987260f0a829"),
     ),
-    ARROW_FLIGHT_SQL(MavenJar("org.apache.arrow", "flight-sql-jdbc-driver", "19.0.0"));
+    ARROW_FLIGHT_SQL(MavenJar("org.apache.arrow", "flight-sql-jdbc-driver", "19.0.0", sha256 = "d3beee43c613c457789825343368f652d570d76c08799dad38a43a10e569b57f"));
 
     val jars: List<MavenJar> = jars.toList()
     val main: MavenJar get() = jars.first()

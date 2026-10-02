@@ -43,26 +43,28 @@ class DriverService {
         return dirs.map { it.resolve(jar.fileName) }.firstOrNull { Files.isRegularFile(it) }
     }
 
-    /** Пути ко всем JAR драйвера, при необходимости скачивая их из Maven Central с проверкой SHA-256. */
+    /** Пути ко всем JAR драйвера, при необходимости скачивая их из Maven Central с проверкой закреплённой суммы SHA-256. */
     fun ensureDownloaded(artifact: DriverArtifact, indicator: ProgressIndicator?): List<Path> = artifact.jars.map { jar ->
         locate(jar) ?: download(jar, indicator)
     }
 
-    private fun download(jar: MavenJar, indicator: ProgressIndicator?): Path {
-        Files.createDirectories(driversDir)
-        val target = driversDir.resolve(jar.fileName)
-        val tmp = Files.createTempFile(driversDir, jar.artifact, ".part")
+    private fun download(jar: MavenJar, indicator: ProgressIndicator?): Path = downloadTo(jar, driversDir, indicator)
+
+    /** Загружает [jar] в [dir] и сверяет закреплённую сумму SHA-256. */
+    internal fun downloadTo(jar: MavenJar, dir: Path, indicator: ProgressIndicator?): Path {
+        Files.createDirectories(dir)
+        val target = dir.resolve(jar.fileName)
+        val tmp = Files.createTempFile(dir, jar.artifact, ".part")
         try {
             indicator?.text = "Загрузка драйвера ${jar.fileName}"
             HttpRequests.request(jar.url()).productNameAsUserAgent().saveToFile(tmp.toFile(), indicator)
-            val expected = HttpRequests.request(jar.url() + ".sha256").productNameAsUserAgent().readString().trim().take(64).lowercase()
             val actual = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(tmp)).joinToString("") { "%02x".format(it) }
-            if (expected.length == 64 && expected != actual) throw SQLException("Контрольная сумма ${jar.fileName} не совпадает (ожидалось $expected)")
+            if (actual != jar.sha256) throw SQLException("Контрольная сумма ${jar.fileName} не совпадает: ожидалось ${jar.sha256}, получено $actual")
             Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (e: java.io.IOException) {
             // Без сети (или за прокси) драйвер можно положить вручную — подсказываем, куда.
             throw SQLException("Не удалось загрузить драйвер ${jar.fileName} из ${jar.url()}: ${e.message}. " +
-                "Скачайте JAR вручную и положите в $driversDir (или укажите его в поле «JAR драйвера» источника данных).", e)
+                "Скачайте JAR вручную и положите в $dir (или укажите его в поле «JAR драйвера» источника данных).", e)
         } finally {
             Files.deleteIfExists(tmp)
         }

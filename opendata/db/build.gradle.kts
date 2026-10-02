@@ -77,6 +77,7 @@ tasks.test {
         "OPENDATA_CH_URL", "OPENDATA_CH_USER", "OPENDATA_CH_PASSWORD",
         "OPENDATA_CB_URL", "OPENDATA_CB_USER", "OPENDATA_CB_PASSWORD",
         "OPENDATA_DREMIO_URL", "OPENDATA_DREMIO_USER", "OPENDATA_DREMIO_PASSWORD",
+        "OPENDATA_TEST_DOWNLOAD",
     )
     dbEnv.forEach { name -> System.getenv(name)?.let { environment(name, it) } }
     environment(

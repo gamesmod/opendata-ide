@@ -25,6 +25,8 @@ jobs:
       OPENDATA_CB_URL: jdbc:postgresql://localhost:54329/opendata
       OPENDATA_CH_URL: jdbc:clickhouse://localhost:8123/opendata
       OPENDATA_DREMIO_URL: jdbc:arrow-flight-sql://localhost:32010/?useEncryption=false
+      # Проверить загрузку драйверов из Maven Central так же, как это делает IDE при первом подключении.
+      OPENDATA_TEST_DOWNLOAD: "1"
     services:
       postgres:
         image: postgres:16
