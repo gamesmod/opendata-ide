@@ -185,8 +185,7 @@ object BulkLoader {
             val target = fileCols.mapNotNull { types[it.lowercase()]?.first?.let(quote) }
             val unknown = fileCols.filter { types[it.lowercase()] == null }
             if (o.header && unknown.isNotEmpty()) throw SQLException("В таблице $table нет колонок из заголовка файла: ${unknown.joinToString()}")
-            val rel = srv.root.toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize()).toString()
-            val location = GpfdistServer.location(host, srv.port, rel)
+            val location = GpfdistServer.location(host, srv.port, srv.publish(file))
             val ddl = "CREATE READABLE EXTERNAL TEMP TABLE $ext (${extCols.joinToString(", ")}) LOCATION (${literal(location)}) " +
                 formatClause(o, forWrite = false) + sreh(kind, o)
             indicator?.text = "gpfdist: $location"
@@ -222,7 +221,7 @@ object BulkLoader {
         Files.write(file, if (o.header) (headerLine(cols, o) + "\n").toByteArray(javaCharset(o.encoding)) else ByteArray(0))
         val ext = extName()
         GpfdistServer(file.toAbsolutePath().parent, port).use { srv ->
-            val location = GpfdistServer.location(host, srv.port, file.fileName.toString())
+            val location = GpfdistServer.location(host, srv.port, srv.publish(file))
             val ddl = "CREATE WRITABLE EXTERNAL TEMP TABLE $ext (LIKE $table) LOCATION (${literal(location)}) " +
                 formatClause(o, forWrite = true) + " DISTRIBUTED RANDOMLY"
             indicator?.text = "gpfdist: $location"

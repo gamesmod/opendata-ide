@@ -53,6 +53,8 @@ class GpfdistServer(
 
     private val pool: ExecutorService = Executors.newCachedThreadPool { r -> Thread(r, "opendata-gpfdist").apply { isDaemon = true } }
     private val readSessions = ConcurrentHashMap<String, ReadSession>()
+    /** Опубликованные файлы: служебное имя без пробелов и спецсимволов → файл (в том числе вне root). */
+    private val aliases = ConcurrentHashMap<String, Path>()
     private val writeSessions = ConcurrentHashMap<String, WriteSession>()
     @Volatile private var closed = false
 
@@ -175,8 +177,20 @@ class GpfdistServer(
 
     // ------------------------------------------------------------------ пути
 
+    /**
+     * Публикует файл под служебным именем (`/opendata-<id>.<ext>`): имена с пробелами и не-ASCII символами иначе
+     * не передать в LOCATION — gpfdist делит путь по пробелам на несколько файлов. Возвращает путь для URL.
+     */
+    fun publish(file: Path): String {
+        val ext = file.fileName.toString().substringAfterLast('.', "dat").filter { it.isLetterOrDigit() }.take(8).ifEmpty { "dat" }
+        val name = "opendata-" + java.util.UUID.randomUUID().toString().replace("-", "").take(16) + "." + ext
+        aliases[name] = file.toAbsolutePath().normalize()
+        return name
+    }
+
     /** Путь запроса → файлы под root: %XX, несколько путей через пробел, маски * и ?, каталог → все файлы. */
     internal fun resolve(target: String, forWrite: Boolean): List<Path> {
+        aliases[target.substringBefore('?').trimStart('/')]?.let { return listOf(it) }
         val decoded = java.net.URLDecoder.decode(target.substringBefore('?').replace("+", "%2B"), Charsets.UTF_8)
         if (decoded.contains("..") || decoded.contains('\\') || decoded.contains(':')) throw HttpError(400, "invalid request due to relative path")
         val base = root.toAbsolutePath().normalize()
@@ -201,7 +215,11 @@ class GpfdistServer(
         return result
     }
 
-    private fun relativeName(p: Path): String = root.toAbsolutePath().normalize().relativize(p).toString().replace('\\', '/').take(255)
+    private fun relativeName(p: Path): String {
+        aliases.entries.firstOrNull { it.value == p }?.let { return it.key }
+        val base = root.toAbsolutePath().normalize()
+        return (if (p.startsWith(base)) base.relativize(p).toString() else p.fileName.toString()).replace('\\', '/').take(255)
+    }
 
     // ------------------------------------------------------------------ чтение (GET)
 

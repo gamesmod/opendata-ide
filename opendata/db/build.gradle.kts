@@ -79,6 +79,10 @@ val prepareTestDrivers by tasks.registering(Sync::class) {
 }
 
 tasks.test {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        events("failed")
+    }
     dependsOn(prepareTestDrivers)
     // Тестовые СУБД (docker/docker-compose.yml): без переменной окружения тесты соответствующей СУБД пропускаются.
     val dbEnv = listOf(

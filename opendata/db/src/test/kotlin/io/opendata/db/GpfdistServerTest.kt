@@ -186,6 +186,18 @@ class GpfdistServerTest : TestCase() {
         }
     }
 
+    /** Файл с пробелом и скобками в имени публикуется под служебным именем (gpfdist делит путь по пробелам). */
+    fun testPublishedAlias() {
+        val f = dir.resolve("my data (1).csv")
+        Files.writeString(f, "a,b\n1,2\n")
+        GpfdistServer(dir).use { srv ->
+            val name = srv.publish(f)
+            assertTrue(name, name.matches(Regex("opendata-[0-9a-f]{16}\\.csv")))
+            val r = request(srv.port, "GET", "/$name", seg("700", 0, 1, "m1x 34q 34n0h1"))
+            assertEquals(listOf("1,2\n"), r.data.map { String(it) })
+        }
+    }
+
     fun testLocationUrl() {
         assertEquals("gpfdist://10.0.0.5:8081/dir/my%20file.csv", GpfdistServer.location("10.0.0.5", 8081, "dir\\my file.csv"))
         assertEquals("gpfdist://[fe80::1]:8081/a.csv", GpfdistServer.location("fe80::1", 8081, "a.csv"))
