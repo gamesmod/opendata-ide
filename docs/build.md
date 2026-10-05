@@ -62,7 +62,9 @@
 | Переменная | Назначение |
 |---|---|
 | `OPENDATA_PG_URL`, `_USER`, `_PASSWORD` | PostgreSQL (по умолчанию `opendata`/`opendata`) |
-| `OPENDATA_CB_URL`, `_USER`, `_PASSWORD` | Apache Cloudberry (по умолчанию учётные данные PG) |
+| `OPENDATA_CB_URL`, `_USER`, `_PASSWORD` | настоящий кластер Apache Cloudberry (по умолчанию `gpadmin`); режим совместимости проверяется на `OPENDATA_PG_URL` |
+| `OPENDATA_GP_URL`, `OPENDATA_GP6_URL`, `OPENDATA_GP_USER`, `_PASSWORD` | Greenplum 7 и 6 (по умолчанию `gpadmin` без пароля) |
+| `OPENDATA_GPFDIST_HOST` | адрес раннера для сегментов (по умолчанию — `inet_client_addr()` координатора) |
 | `OPENDATA_CH_URL`, `_USER`, `_PASSWORD` | ClickHouse (по умолчанию `default` без пароля) |
 | `OPENDATA_DREMIO_URL`, `_USER`, `_PASSWORD` | Dremio (по умолчанию `dremio`/`dremio123`) |
 | `OPENDATA_DRIVERS_DIR` | каталог JAR драйверов; в тестах по умолчанию `opendata/db/build/test-drivers` |
@@ -104,7 +106,8 @@ GitHub Actions (`.github/workflows/build.yml`):
 | Job | Что делает |
 |---|---|
 | `linux` | сервисы PostgreSQL 16, ClickHouse 25.8, Dremio OSS 26.0 и их init; `scripts/build.sh` (тесты на всех СУБД, продукт, tar.gz); smoke IDE под Xvfb для PG, ClickHouse и Dremio |
-| `windows` | `scripts/build.ps1 -SkipTests` (продукт и ZIP); `scripts/run.ps1 -Check` (запуск IDE на Windows) |
-| `release` | после зелёных `linux` и `windows` на `main` создаёт GitHub Release `v<version>` с tar.gz, ZIP и ZIP плагина, если такого релиза ещё нет |
+| `mpp` | Greenplum 7, Greenplum 6 (`andruche/greenplum`) и Apache Cloudberry 2.1 (`woblerr/cloudberry`): `BulkLoadTest` (COPY с журналом ошибок, загрузка и выгрузка через встроенный gpfdist, DDL, метаданные) и `GpfdistServerTest` |
+| `windows` | `scripts/build.ps1 -SkipTests` (продукт, значок exe через rcedit, ZIP); проверка `VersionInfo` и значка exe; `scripts/run.ps1 -Check` (запуск IDE на Windows) |
+| `release` | после зелёных `linux`, `mpp` и `windows` на `main` создаёт GitHub Release `v<version>` с tar.gz, ZIP и ZIP плагина, если такого релиза ещё нет |
 
 Чтобы выпустить релиз, поднимите `version` в `gradle.properties` и запушьте в `main`.

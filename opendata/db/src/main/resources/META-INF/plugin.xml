@@ -81,6 +81,8 @@
             </action>
             <action id="OpenData.Console.ChooseDataSource" class="io.opendata.db.ui.ChooseDataSourceAction" text="Choose Data Source…"/>
             <action id="OpenData.NewDataSource" class="io.opendata.db.ui.NewDataSourceAction" text="New Data Source…" icon="AllIcons.General.Add"/>
+            <action id="OpenData.Gpfdist" class="io.opendata.db.bulk.GpfdistServerAction" text="gpfdist-сервер…"
+                    description="Встроенный gpfdist: отдать каталог внешним таблицам Greenplum/Cloudberry"/>
             <action id="OpenData.Drivers" class="io.opendata.db.drivers.ManageDriversAction" text="Драйверы…"
                     description="Менеджер драйверов: версии, свои JAR, класс, шаблон URL, свойства"/>
         </group>

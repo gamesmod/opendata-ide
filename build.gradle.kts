@@ -45,6 +45,8 @@ tasks.register<Exec>("assembleProduct") {
             "--drivers", file("opendata/db/build/drivers").absolutePath,
             "--out", file("build/product/${os.get()}/OpenData-IDE").absolutePath, "--version", version,
         )
+        // Значок opendata64.exe: путь к rcedit-x64.exe (scripts/build.ps1 загружает его с проверкой SHA-256).
+        providers.gradleProperty("rcedit").orNull?.let { args += listOf("--rcedit", it) }
         if (os.get() == "windows") {
             args += listOf("--zip", file("build/distributions/OpenData-IDE-$version-windows-x64.zip").absolutePath)
         }

@@ -2,6 +2,14 @@
 
 Сводная таблица отличий приведена в [`architecture.md`](architecture.md#поддержка-субд). PostgreSQL описан отдельно в [`postgresql.md`](postgresql.md).
 
+## Greenplum 6/7
+
+Тип **Greenplum** — для Greenplum 6 (ядро PostgreSQL 9.4), Greenplum 7 (PostgreSQL 12) и совместимых форков
+(Greengage, WarehousePG, open-gpdb). Драйвер — PostgreSQL JDBC из комплекта, URL `jdbc:postgresql://<master>:5432/<db>`.
+Explorer, консоль, транзакции, редактирование таблиц и DDL (с `DISTRIBUTED BY`) работают как для PostgreSQL;
+запросы к каталогу учитывают версию ядра (в GP6 нет `pg_proc.prokind` и `attidentity`).
+Проверено в CI на `andruche/greenplum:6` и `andruche/greenplum:7`.
+
 ## Apache Cloudberry
 
 Cloudberry — MPP-форк Greenplum на ядре PostgreSQL. Протокол и системный каталог у него совместимы с PostgreSQL, поэтому:
@@ -11,8 +19,8 @@ Cloudberry — MPP-форк Greenplum на ядре PostgreSQL. Протокол
 - DDL таблицы дополняется `DISTRIBUTED BY (...)` / `DISTRIBUTED RANDOMLY` через `pg_get_table_distributedby`.
   Если функции нет (например, при подключении к обычному PostgreSQL в режиме Cloudberry), строка пропускается.
 
-Отдельного образа Cloudberry в стенде нет. Тесты (`testCloudberryModeOnPostgresProtocol`) и smoke выполняются
-на PostgreSQL в режиме Cloudberry. Для проверки на кластере задайте `OPENDATA_CB_URL`, `OPENDATA_CB_USER` и `OPENDATA_CB_PASSWORD`.
+Проверено в CI на кластере Apache Cloudberry 2.1.0-incubating (`woblerr/cloudberry`): метаданные, DDL с `DISTRIBUTED BY`,
+bulk-загрузка COPY и gpfdist, выгрузка. Для своего кластера задайте `OPENDATA_CB_URL`, `OPENDATA_CB_USER` и `OPENDATA_CB_PASSWORD`.
 
 ## ClickHouse
 
@@ -50,6 +58,36 @@ Cloudberry — MPP-форк Greenplum на ядре PostgreSQL. Протокол
 - DDL доступен для представлений (`INFORMATION_SCHEMA."VIEWS"`);
 - транзакций нет.
 
+## Bulk-загрузка Greenplum и Cloudberry (Windows без gpfdist.exe и gpload)
+
+Контекстное меню таблицы → **Bulk-загрузка (COPY / gpfdist)…** и **Bulk-выгрузка (gpfdist)…**; окно Database → «Ещё»
+→ **gpfdist-сервер…**. Нативные утилиты Greenplum (gpfdist.exe, gpload, Python) не нужны: всё работает внутри IDE.
+
+| Способ | Как работает | Когда использовать |
+|---|---|---|
+| COPY через координатор | `COPY … FROM STDIN` (PgJDBC CopyManager), поток файла идёт через координатор | любые объёмы до десятков ГБ; единственный способ, если сегменты не видят рабочую станцию |
+| gpfdist (параллельно) | IDE запускает встроенный gpfdist, создаёт временную `READABLE EXTERNAL TABLE … LOCATION ('gpfdist://<адрес>:<порт>/<файл>')`, сегменты читают блоки файла параллельно, затем `INSERT … SELECT` в одной транзакции | большие файлы: скорость определяется сегментами, а не координатором |
+| Выгрузка (gpfdist) | временная `WRITABLE EXTERNAL TABLE … DISTRIBUTED RANDOMLY`, сегменты пишут файл параллельно; заголовок пишет IDE | быстрая выгрузка больших таблиц на рабочую станцию |
+
+Параметры: CSV или TEXT, разделитель, заголовок (сопоставление колонок по именам без учёта регистра), строка NULL,
+кодировка файла (`UTF8`, `WIN1251`, …), TRUNCATE перед загрузкой и **допустимое число ошибочных строк**: при значении ≥ 2
+используется `LOG ERRORS SEGMENT REJECT LIMIT n ROWS`, отклонённые строки видны в `gp_read_error_log()`, их число IDE
+показывает в уведомлении. При 0 любая ошибка отменяет загрузку целиком.
+
+**Сеть.** Сегменты подключаются к рабочей станции: адрес по умолчанию — тот, которым IDE видна координатору
+(`inet_client_addr()`), его можно указать вручную (например, при VPN/NAT). Порт `0` — любой свободный; при первом
+запуске Windows спросит разрешение брандмауэра для Java (JetBrains Runtime) — его нужно дать для частной сети, либо
+задать фиксированный порт и открыть его.
+
+Встроенный gpfdist реализует протокол сегментов GP6/GP7/Cloudberry (по исходникам `gpfdist.c` и `url_curl.c`):
+протокол 1 (блоки F/O/L/D), разбивку файла на блоки целых записей с учётом кавычек CSV, пропуск заголовка сервером,
+маски и несколько файлов, запись с `X-GP-SEQ`/`X-GP-DONE`. Не поддерживаются сжатие zstd (сегменты автоматически
+обходятся без него), `gpfdists` (TLS) и трансформации (`#transform`).
+
+**gpfdist-сервер** (окно Database → «Ещё»): отдаёт выбранный каталог для своих внешних таблиц, например
+`CREATE READABLE EXTERNAL TABLE … LOCATION ('gpfdist://10.0.0.5:8080/sales_*.csv') FORMAT 'CSV' (HEADER)`.
+Работает, пока открыта IDE.
+
 ## Менеджер драйверов
 
 **Settings → Tools → OpenData: драйверы**. Тот же экран открывают меню SQL → Драйверы…, «Ещё → Драйверы…» в окне
@@ -63,14 +101,21 @@ Database и ссылка «Менеджер драйверов…» в диал�
 | Класс драйвера, шаблон URL, свойства | переопределения для всех подключений этой СУБД |
 | Загрузить / Проверить / Удалить загруженные / Открыть папку | загрузка заранее; проверка класса и версии драйвера; очистка; каталог драйверов |
 
-## Драйверы без доступа в интернет
+## Драйверы
 
-Драйвер ищется в таком порядке:
+С версии 0.4.0 все драйверы входят в дистрибутив (`plugins/opendata-db/drivers`, ~60 МБ): PostgreSQL JDBC 42.7.13
+(PostgreSQL, Greenplum, Cloudberry), ClickHouse JDBC 0.10.0 + SLF4J, Arrow Flight SQL JDBC 19.0.0 (Dremio). Загрузка из
+Maven Central нужна, только если в менеджере драйверов выбрана другая версия. Порядок поиска JAR:
 
-1. `OPENDATA_DRIVERS_DIR`;
-2. `plugins/opendata-db/drivers` в каталоге IDE;
-3. `<config>/opendata/drivers`. На Windows это `%APPDATA%\OpenData\OpenData2026.2\opendata\drivers`,
-   на Linux — `~/.config/OpenData/OpenData2026.2/opendata/drivers`.
+1. поле «JAR драйвера» подключения, затем «Свои JAR» в менеджере драйверов;
+2. `OPENDATA_DRIVERS_DIR`;
+3. `plugins/opendata-db/drivers` в каталоге IDE;
+4. `<config>/opendata/drivers` (загруженные версии): на Windows `%APPDATA%\OpenData\OpenData2026.2\opendata\drivers`.
 
-Положите туда JAR с точными именами из сообщения об ошибке: `clickhouse-jdbc-0.10.0-all.jar`, `slf4j-api-2.0.17.jar`,
-`slf4j-nop-2.0.17.jar`, `flight-sql-jdbc-driver-19.0.0.jar`. Другой вариант — указать свои JAR в менеджере драйверов (для всех подключений СУБД) или в поле «JAR драйвера» подключения.
+## JDBC URL
+
+Поле JDBC URL в диалоге подключения синхронизировано с полями: изменение хоста, порта или базы пересобирает URL, а
+вставленный URL заполняет поля и **определяет тип СУБД по префиксу** (`jdbc:clickhouse:` → ClickHouse,
+`jdbc:arrow-flight-sql:` → Dremio, `jdbc:postgresql:` — PostgreSQL, Greenplum или Cloudberry). URL с параметрами
+(`?sslmode=require&…`) сохраняется как есть. В дереве Database адрес показывается из URL. Если URL не подходит к типу
+подключения, IDE сообщает об этом явно, а не ошибкой драйвера.

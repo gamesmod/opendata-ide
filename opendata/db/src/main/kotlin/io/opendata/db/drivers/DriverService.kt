@@ -148,6 +148,8 @@ class DriverService {
         if (config.user.isNotBlank()) props["user"] = config.user
         if (!password.isNullOrEmpty()) props["password"] = password
         val url = config.effectiveUrl()
+        if (!io.opendata.db.model.JdbcUrls.matches(config.kind, url))
+            throw SQLException("JDBC URL $url не подходит для типа подключения ${config.kind.displayName}: смените тип в свойствах подключения")
         indicator?.text = "Подключение к $url"
         // Драйвер вызывается напрямую: java.sql.DriverManager не видит классы из чужого classloader.
         val previous = Thread.currentThread().contextClassLoader

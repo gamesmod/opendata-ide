@@ -1,4 +1,5 @@
 # Сборка OpenData IDE (открытая IntelliJ Platform + DB-слой opendata-db), тесты на реальных PostgreSQL / ClickHouse / Dremio,
+# Greenplum 6/7 и Apache Cloudberry (bulk-загрузка COPY и встроенный gpfdist),
 # самопроверка собранной IDE под Xvfb и сборка дистрибутивов Linux (tar.gz) и Windows (zip).
 # После зелёной сборки main публикуется GitHub Release v<version> (если его ещё нет).
 name: build
@@ -21,8 +22,6 @@ jobs:
       OPENDATA_PG_URL: jdbc:postgresql://localhost:54329/opendata
       OPENDATA_PG_USER: opendata
       OPENDATA_PG_PASSWORD: opendata
-      # Cloudberry: отдельного образа в CI нет — проверяется режим совместимости на том же PostgreSQL.
-      OPENDATA_CB_URL: jdbc:postgresql://localhost:54329/opendata
       OPENDATA_CH_URL: jdbc:clickhouse://localhost:8123/opendata
       OPENDATA_DREMIO_URL: jdbc:arrow-flight-sql://localhost:32010/?useEncryption=false
       # Проверить загрузку драйверов из Maven Central так же, как это делает IDE при первом подключении.
@@ -139,6 +138,77 @@ jobs:
           path: build/distributions/OpenData-IDE-*-linux-x64.tar.gz
           compression-level: 0
 
+  # Greenplum 6/7 и Apache Cloudberry: bulk-загрузка (COPY с журналом ошибок, встроенный gpfdist — сегменты читают
+  # и пишут файлы на раннере), DDL с DISTRIBUTED BY, метаданные. Сегменты внутри контейнеров обращаются к gpfdist
+  # раннера по адресу шлюза docker-сети (inet_client_addr координатора).
+  mpp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OPENDATA_GP_URL: jdbc:postgresql://localhost:54331/postgres
+      OPENDATA_GP6_URL: jdbc:postgresql://localhost:54332/postgres
+      OPENDATA_GP_USER: gpadmin
+      OPENDATA_CB_URL: jdbc:postgresql://localhost:54333/demo
+      OPENDATA_CB_USER: gpadmin
+      OPENDATA_CB_PASSWORD: gparray
+    services:
+      greenplum7:
+        image: andruche/greenplum:7
+        ports: [ "54331:5432" ]
+      greenplum6:
+        image: andruche/greenplum:6
+        ports: [ "54332:5432" ]
+      cloudberry:
+        image: woblerr/cloudberry:2.1.0-incubating
+        env:
+          CLOUDBERRY_PASSWORD: gparray
+        ports: [ "54333:5432" ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Platform version
+        id: platform
+        run: echo "version=$(sed -n 's/^ossPlatformVersion=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache open IntelliJ platform
+        uses: actions/cache@v4
+        with:
+          path: build/platform/${{ steps.platform.outputs.version }}/linux
+          key: oss-platform-linux-${{ steps.platform.outputs.version }}
+
+      - name: Open IntelliJ platform
+        run: |
+          source scripts/common.sh
+          get_oss_platform
+          echo "OPENDATA_PLATFORM_HOME=$PLATFORM" >> "$GITHUB_ENV"
+
+      - name: Wait for Greenplum and Cloudberry
+        run: |
+          for p in 54331 54332 54333; do
+            for i in $(seq 1 90); do
+              if PGPASSWORD=gparray psql -h localhost -p $p -U gpadmin -d postgres -tAc "select version()" 2>/dev/null; then break; fi
+              sleep 4
+            done
+          done
+          docker ps
+
+      - name: MPP tests (Greenplum 7, Greenplum 6, Cloudberry)
+        run: ./gradlew --console=plain -PossIdePath="$OPENDATA_PLATFORM_HOME" :opendata:db:test --tests 'io.opendata.db.BulkLoadTest' --tests 'io.opendata.db.GpfdistServerTest'
+
+      - name: MPP test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpp-test-results
+          path: opendata/db/build/test-results/test/*.xml
+
   windows:
     runs-on: windows-latest
     timeout-minutes: 60
@@ -168,6 +238,23 @@ jobs:
         # DB-тесты выполняются в linux-job (нужны контейнеры СУБД); здесь — сборка и проверка запуска.
         run: ./scripts/build.ps1 -SkipTests
 
+      - name: Check exe icon and version info (rcedit)
+        shell: pwsh
+        run: |
+          $exe = Get-Item build/product/windows/OpenData-IDE/bin/opendata64.exe
+          $v = $exe.VersionInfo
+          Write-Host "ProductName=$($v.ProductName) FileDescription=$($v.FileDescription) ProductVersion=$($v.ProductVersion)"
+          if ($v.ProductName -ne 'OpenData IDE') { throw "ProductName в ресурсах exe: '$($v.ProductName)'" }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.FullName)
+          $icon.ToBitmap().Save("$PWD/build/exe-icon.png", [System.Drawing.Imaging.ImageFormat]::Png)
+
+      - name: Exe icon preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-icon
+          path: build/exe-icon.png
+
       - name: Startup check of the assembled IDE
         shell: pwsh
         run: ./scripts/run.ps1 -Check
@@ -186,7 +273,7 @@ jobs:
           path: opendata/db/build/distributions/*.zip
 
   release:
-    needs: [ linux, windows ]
+    needs: [ linux, windows, mpp ]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     steps:

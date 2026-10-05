@@ -1,3 +1,39 @@
+## OpenData IDE 0.4.0 — JDBC URL, драйверы в поставке, Greenplum, bulk-загрузка под Windows, новый значок
+
+### JDBC URL подключения
+- Поле JDBC URL синхронизировано с полями хоста, порта и базы. Вставленный URL заполняет поля и **определяет тип СУБД
+  по префиксу** (`jdbc:clickhouse:`, `jdbc:arrow-flight-sql:`, `jdbc:postgresql:`). Раньше URL одного типа при
+  выбранном другом типе (например, ClickHouse-URL у подключения PostgreSQL) не подхватывался.
+- URL с параметрами (`?sslmode=require&…`) сохраняется как есть; адрес в дереве Database берётся из URL.
+- Несовместимый URL — понятное сообщение в диалоге и при подключении.
+
+### Драйверы в поставке
+- В дистрибутив входят все драйверы: PostgreSQL JDBC 42.7.13 (PostgreSQL, Greenplum, Cloudberry), ClickHouse JDBC 0.10.0,
+  Arrow Flight SQL JDBC 19.0.0 (Dremio). Доступ к Maven Central больше не нужен.
+
+### Greenplum
+- Новый тип подключения **Greenplum** (6 и 7, а также Greengage, WarehousePG, open-gpdb). Запросы к каталогу учитывают
+  ядро PostgreSQL 9.4 в Greenplum 6.
+
+### Bulk-загрузка Greenplum и Cloudberry (Windows без gpfdist.exe и gpload)
+- **COPY через координатор** (также для PostgreSQL) и **встроенный gpfdist**: IDE сама раздаёт файл сегментам,
+  создаёт временную внешнюю таблицу и выполняет `INSERT … SELECT` — параллельная загрузка как у gpload.
+- Допустимое число ошибочных строк (`LOG ERRORS SEGMENT REJECT LIMIT`), число отклонённых строк в уведомлении.
+- **Bulk-выгрузка** таблицы через writable external table: сегменты пишут файл на рабочую станцию параллельно.
+- **gpfdist-сервер** каталога для своих внешних таблиц (окно Database → «Ещё»).
+- CSV/TEXT, разделитель, заголовок, NULL, кодировка файла (UTF8, WIN1251, …), TRUNCATE.
+
+### Новый значок
+- Новый значок приложения (SVG, PNG, ICO 16–256 px), обновлённая заставка. На Windows значок и сведения о версии
+  записаны в ресурсы `opendata64.exe`.
+
+### Проверено
+- 48 тестов локально (PostgreSQL, ClickHouse, Dremio), в CI дополнительно — на кластерах Greenplum 6, Greenplum 7 и
+  Apache Cloudberry 2.1: COPY с журналом ошибок, загрузка и выгрузка через встроенный gpfdist, DDL, метаданные.
+- Smoke собранной IDE; Dremio работает на драйвере из поставки без каталога загрузок.
+
+---
+
 ## OpenData IDE 0.3.0 — проекты, менеджер драйверов, импорт и экспорт
 
 ### Подключения в проекте

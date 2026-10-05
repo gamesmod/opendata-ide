@@ -51,6 +51,18 @@
 | DDL | ✅ `testDdl` | ✅ | ✅ `testIntrospectionAndDdl` | ✅ представления (`testQueryAndViewDdl`) |
 | smoke IDE | ✅ | ✅ | ✅ | ✅ |
 
+## Версия 0.4.0: JDBC URL, драйверы в поставке, Greenplum, bulk-загрузка, значок
+
+| Проверка | Тест | Где |
+|---|---|---|
+| Вставленный JDBC URL заполняет тип, хост, порт, базу; URL с параметрами сохраняется; поля пересобирают URL | `DataSourceDialogUrlTest`, `JdbcUrlsTest` | локально |
+| URL другого типа СУБД — понятная ошибка; адрес в дереве — из URL | `testMismatchedUrlGivesClearError`, `testMatchesAndAddress` | локально, UI |
+| Все драйверы в дистрибутиве, без загрузки | `testAllDriversAvailableWithoutDownload`; smoke Dremio без каталога загрузок | локально |
+| gpfdist: параллельные сегменты получают каждую запись один раз, блоки — целые записи, опоздавший сегмент — пустой ответ, ошибки 400/404/500/E, запись с SEQ/DONE | `GpfdistServerTest` (5) | локально и CI |
+| COPY: заголовок, TRUNCATE, откат при ошибке, TEXT с `\N` | `BulkLoadTest.testPostgresCopy` | PostgreSQL |
+| COPY с `LOG ERRORS SEGMENT REJECT LIMIT`, загрузка через gpfdist (сегменты кластера читают файл с раннера), откат без допуска ошибок, выгрузка через writable external table, DDL с `DISTRIBUTED BY`, функции | `BulkLoadTest.testGreenplum6/7`, `testCloudberry` | CI: Greenplum 6, Greenplum 7, Cloudberry 2.1 |
+| Значок и сведения о версии в `opendata64.exe` | шаг `Check exe icon and version info` | CI Windows |
+
 ## Версия 0.3.0: проекты, драйверы, импорт и экспорт
 
 | Проверка | Тест | Проверено в UI (Linux, Xvfb) |

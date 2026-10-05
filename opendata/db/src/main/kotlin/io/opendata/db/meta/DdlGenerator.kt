@@ -9,6 +9,8 @@ import java.sql.Connection
  */
 class DdlGenerator(private val c: Connection, private val kind: DbKind) {
     private val loader = MetadataLoader(c, kind)
+    /** Версия ядра PostgreSQL: Greenplum 6 — 9.4 (нет prokind, attidentity), GP7 — 12, Cloudberry 2 — 14. */
+    private val pgMajor: Int = runCatching { c.metaData.databaseMajorVersion }.getOrDefault(16)
     private fun q(s: String) = loader.quote(s)
 
     fun ddl(o: DbObject): String = when {
@@ -41,7 +43,7 @@ class DdlGenerator(private val c: Connection, private val kind: DbKind) {
         }
         DbObjectKind.FUNCTION -> all(
             "SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace " +
-                "WHERE n.nspname = ? AND p.proname = ? AND p.prokind IN ('f','p') ORDER BY p.oid", o.schema, o.name,
+                "WHERE n.nspname = ? AND p.proname = ? AND " + (if (pgMajor >= 11) "p.prokind IN ('f','p')" else "NOT p.proisagg") + " ORDER BY p.oid", o.schema, o.name,
         ).joinToString(";\n\n") { it.trimEnd() }.ifEmpty { "-- функция ${o.name} не найдена" }
         DbObjectKind.SEQUENCE -> one(
             "SELECT format('CREATE SEQUENCE %I.%I AS %s INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s%s', " +
@@ -65,7 +67,7 @@ class DdlGenerator(private val c: Connection, private val kind: DbKind) {
         val r = reg(o)
         val cols = c.prepareStatement(
             """
-            SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull, pg_get_expr(d.adbin, d.adrelid), a.attidentity::text
+            SELECT a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull, pg_get_expr(d.adbin, d.adrelid), ${if (pgMajor >= 10) "a.attidentity::text" else "''::text"}
             FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
             WHERE a.attrelid = to_regclass(?) AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum
             """.trimIndent(),
@@ -91,7 +93,7 @@ class DdlGenerator(private val c: Connection, private val kind: DbKind) {
                 "WHERE conrelid = to_regclass(?) ORDER BY CASE contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 WHEN 'f' THEN 2 ELSE 3 END, conname", r,
         )
         val sb = StringBuilder("CREATE TABLE $r (\n").append((cols + constraints).joinToString(",\n")).append("\n)")
-        if (kind == DbKind.CLOUDBERRY) {
+        if (kind.isMpp) {
             // Cloudberry/Greenplum: политика распределения данных.
             runCatching { one("SELECT pg_get_table_distributedby(to_regclass(?))", r) }.getOrNull()?.let { sb.append("\n").append(it) }
         }

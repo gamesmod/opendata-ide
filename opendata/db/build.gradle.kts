@@ -19,17 +19,26 @@ repositories {
     }
 }
 
-/** JDBC-драйверы: PostgreSQL входит в дистрибутив, остальные IDE скачивает по требованию (тестам — из Gradle). */
+/**
+ * JDBC-драйверы всех поддерживаемых СУБД входят в дистрибутив (plugins/opendata-db/drivers): IDE работает без доступа
+ * к Maven Central. PostgreSQL JDBC обслуживает PostgreSQL, Greenplum и Cloudberry. Версии совпадают с DbKind.kt
+ * (закреплённые SHA-256 сверяет DriverServiceTest).
+ */
+val driverArtifacts = listOf(
+    "org.postgresql:postgresql:42.7.13",
+    "com.clickhouse:clickhouse-jdbc:0.10.0:all",
+    "org.slf4j:slf4j-api:2.0.17",
+    "org.slf4j:slf4j-nop:2.0.17",
+    "org.apache.arrow:flight-sql-jdbc-driver:19.0.0",
+)
 val bundledDrivers by configurations.creating { isTransitive = false }
 val testDrivers by configurations.creating { isTransitive = false }
 
 dependencies {
-    bundledDrivers("org.postgresql:postgresql:42.7.13")
-    testDrivers("org.postgresql:postgresql:42.7.13")
-    testDrivers("com.clickhouse:clickhouse-jdbc:0.10.0:all")
-    testDrivers("org.slf4j:slf4j-api:2.0.17")
-    testDrivers("org.slf4j:slf4j-nop:2.0.17")
-    testDrivers("org.apache.arrow:flight-sql-jdbc-driver:19.0.0")
+    driverArtifacts.forEach {
+        bundledDrivers(it)
+        testDrivers(it)
+    }
     intellijPlatform {
         local(ossIde.orElse(provider { throw GradleException("Укажите -PossIdePath или OPENDATA_PLATFORM_HOME (scripts/fetch-platform.sh)") }).get())
         // Открытый grid (DataGrid) из intellij-community.
@@ -76,6 +85,7 @@ tasks.test {
         "OPENDATA_PG_URL", "OPENDATA_PG_USER", "OPENDATA_PG_PASSWORD",
         "OPENDATA_CH_URL", "OPENDATA_CH_USER", "OPENDATA_CH_PASSWORD",
         "OPENDATA_CB_URL", "OPENDATA_CB_USER", "OPENDATA_CB_PASSWORD",
+        "OPENDATA_GP_URL", "OPENDATA_GP6_URL", "OPENDATA_GP_USER", "OPENDATA_GP_PASSWORD", "OPENDATA_GPFDIST_HOST",
         "OPENDATA_DREMIO_URL", "OPENDATA_DREMIO_USER", "OPENDATA_DREMIO_PASSWORD",
         "OPENDATA_TEST_DOWNLOAD",
     )

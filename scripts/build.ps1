@@ -31,7 +31,10 @@ if (-not $SkipTests) { $gradleArgs += ':opendata:db:test' }
 Invoke-Gradle $gradleArgs
 
 Write-Step '4/4 Продукт OpenData IDE'
-Invoke-Gradle @("-PossIdePath=$platform", '-PproductOs=windows', '--console=plain', 'assembleProduct')
+$productArgs = @("-PossIdePath=$platform", '-PproductOs=windows', '--console=plain', 'assembleProduct')
+$rcedit = Get-Rcedit
+if ($rcedit) { $productArgs += "-Prcedit=$rcedit" }
+Invoke-Gradle $productArgs
 
 $version = Get-GradleProperty 'version'
 Write-Host ''

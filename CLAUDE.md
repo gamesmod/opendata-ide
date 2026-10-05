@@ -1212,7 +1212,10 @@ IntelliJ sandbox/product
 - С 0.3.0 подключения — в проекте (`DataSourceStorage` — сервис проекта, `.idea/opendata-datasources.xml`; поиск по id —
   `DataSources.find`), консоли — `.idea/opendata/consoles`; менеджер драйверов — `drivers/DriverSettings` + `DriversConfigurable`;
   импорт/экспорт — пакет `data/`.
-- Тесты: `:opendata:db:test` — 33 (PG, CB-режим, CH, Dremio через `OPENDATA_*_URL`); smoke собранной IDE — `run.* --smoke`.
+- С 0.4.0: все драйверы в поставке; `model/JdbcUrls` (URL ↔ поля, тип по префиксу); тип GREENPLUM; пакет `bulk/`:
+  `GpfdistServer` (протокол gpfdist на Java) и `BulkLoader` (COPY, внешние таблицы); значок в `AssembleProduct` + rcedit.
+  CI-job `mpp`: Greenplum 6/7 и Cloudberry 2.1 (`OPENDATA_GP_URL`, `OPENDATA_GP6_URL`, `OPENDATA_CB_URL`).
+- Тесты: `:opendata:db:test` — 48 + MPP (PG, CB-режим, CH, Dremio через `OPENDATA_*_URL`); smoke собранной IDE — `run.* --smoke`.
 - CI: `.github/workflows/build.yml` — linux (СУБД-сервисы, тесты, smoke под Xvfb, tar.gz), windows (ZIP, `run.ps1 -Check`), release.
 - Этап 0 (исследование DataGrip) сохранён как история: `scripts/research.*`, `docs/jetbrains-db-analysis.md` и др.
   Сырые выгрузки `docs/research/*` в публичный репозиторий не публикуются.

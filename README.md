@@ -4,7 +4,8 @@
 
 Лёгкая настольная IDE для работы с СУБД, собранная как **самостоятельный продукт** на открытой
 **IntelliJ Platform** (IntelliJ IDEA Open Source 2026.2.3, Apache 2.0). Поддерживаются
-**PostgreSQL**, **Apache Cloudberry**, **ClickHouse** и **Dremio**.
+**PostgreSQL**, **Greenplum 6/7**, **Apache Cloudberry**, **ClickHouse** и **Dremio**. JDBC-драйверы всех СУБД входят
+в дистрибутив — доступ в интернет не нужен.
 
 В дистрибутиве только ядро платформы, открытый модуль `intellij.grid` (DataGrid) и собственный DB-слой
 `opendata-db`. Плагинов Java, Kotlin, Git, Markdown и других нет, советы при запуске, onboarding и проверка
@@ -16,9 +17,10 @@
 | Функция | Реализация |
 |---|---|
 | Проекты | проект — папка; подключения хранятся в её `.idea/opendata-datasources.xml`, консоли — в `.idea/opendata/consoles`. New Project на Welcome-экране, File → Новый проект… |
-| Подключения (в проекте) | Add / Edit / Duplicate / Delete, Test Connection, host/port/db/user, JDBC URL, свойства, свой JAR; экспорт и импорт подключений (XML без паролей); пароли в `PasswordSafe` |
-| Менеджер драйверов | Settings → Tools → OpenData: драйверы: состояние, версия из Maven Central, свои JAR, класс драйвера, шаблон URL, свойства по умолчанию; загрузка, проверка, удаление. PostgreSQL в комплекте, ClickHouse и Arrow Flight SQL (Dremio) загружаются с проверкой контрольной суммы |
+| Подключения (в проекте) | Add / Edit / Duplicate / Delete, Test Connection, host/port/db/user, JDBC URL (синхронизируется с полями; вставленный URL сам определяет тип СУБД, хост, порт и базу), свойства, свой JAR; экспорт и импорт подключений (XML без паролей); пароли в `PasswordSafe` |
+| Менеджер драйверов | Settings → Tools → OpenData: драйверы: состояние, версия из Maven Central, свои JAR, класс драйвера, шаблон URL, свойства по умолчанию; загрузка, проверка, удаление. Драйверы PostgreSQL (он же для Greenplum и Cloudberry), ClickHouse и Arrow Flight SQL (Dremio) — в комплекте |
 | Импорт и экспорт данных | экспорт таблицы целиком (потоково) и результата запроса в CSV, TSV, JSON, SQL INSERT, Markdown; импорт CSV/TSV в существующую или новую таблицу (в PostgreSQL и Cloudberry — одной транзакцией) |
+| Bulk-загрузка (Greenplum, Cloudberry, PostgreSQL) | без нативных утилит, в том числе на Windows: COPY через координатор и **встроенный gpfdist** (сегменты читают файл с рабочей станции параллельно, как gpload) с журналом ошибок `LOG ERRORS SEGMENT REJECT LIMIT`; параллельная выгрузка через writable external table; gpfdist-сервер каталога для своих внешних таблиц |
 | Database Explorer | схемы, таблицы, представления, функции, последовательности, типы; колонки, ключи, индексы, триггеры, ограничения |
 | SQL Console | подсветка, completion по метаданным (таблицы, колонки, алиасы), Ctrl+Enter, скрипт, отмена, ошибки с позицией, Auto-commit / Commit / Rollback, история запросов |
 | Результаты | открытый JetBrains **DataGrid**: выделение, копирование, сортировка, фильтр, ширина колонок, NULL, даты, JSON, LOB |

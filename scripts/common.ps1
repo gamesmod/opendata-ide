@@ -239,3 +239,19 @@ function Get-OssPlatform([string]$Os = 'windows', [string]$Explicit) {
 }
 
 function Get-ProductDir([string]$Os = 'windows') { return Join-Path $script:ProjectRoot "build/product/$Os/OpenData-IDE" }
+
+# rcedit (electron/rcedit, MIT): значок и сведения о версии в ресурсах opendata64.exe. Версия и SHA-256 закреплены.
+function Get-Rcedit {
+    $dir = Join-Path $script:ProjectRoot 'build/tools'
+    $exe = Join-Path $dir 'rcedit-x64.exe'
+    $sha = '3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a'
+    if (-not (Test-Path $exe) -or (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() -ne $sha) {
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $url = 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe'
+        Write-Host "Загрузка rcedit: $url"
+        $prev = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+        try { Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing } catch { Write-Warning "rcedit не загружен ($($_.Exception.Message)): значок opendata64.exe не будет изменён"; return $null } finally { $ProgressPreference = $prev }
+        if ((Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() -ne $sha) { Remove-Item $exe; Fail 'Контрольная сумма rcedit-x64.exe не совпадает' }
+    }
+    return $exe
+}

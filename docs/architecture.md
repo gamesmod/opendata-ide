@@ -34,6 +34,7 @@
 │   model/    DbKind, DataSourceConfig, DataSourceStorage (проект), PasswordSafe│
 │   drivers/  DriverService, DriverSettings, DriversConfigurable (менеджер)     │
 │   data/     DataExporter, DataImporter, CsvReader, диалоги импорта/экспорта   │
+│   bulk/     BulkLoader (COPY, gpfdist), GpfdistServer, диалоги bulk           │
 │   session/  DbSession, DbSessions, QueryExecutor, SqlSplitter, DbError        │
 │   meta/     MetadataLoader, MetadataCache, DdlGenerator                       │
 │   lang/     SQL: FileType, Lexer, Highlighter, Commenter, Completion          │
@@ -112,6 +113,32 @@ Id подключения — UUID, поэтому код без контекс�
   Вставка идёт пакетами по 1000 строк. В СУБД с транзакциями импорт атомарный. Можно создать новую таблицу
   с текстовыми колонками: `TEXT` или `Nullable(String)` + `MergeTree` в ClickHouse. Dremio подключён только для чтения.
 - **Подключения**: экспорт и импорт XML того же формата, что `.idea/opendata-datasources.xml`, без паролей.
+
+## Bulk-загрузка и встроенный gpfdist
+
+`bulk/GpfdistServer` — gpfdist-совместимый HTTP-сервер на Java (сокеты, без `com.sun.net.httpserver`: сегмент сравнивает
+имя заголовка `X-GP-PROTO` с учётом регистра). Протокол восстановлен по исходникам Greenplum (`src/bin/gpfdist/gpfdist.c`,
+`src/backend/access/external/url_curl.c`) и сверен с GP6 (open-gpdb 6X_STABLE), GP7 и Apache Cloudberry 2.1:
+
+- **чтение**: один GET на сегмент с `X-GP-XID/CID/SN/PROTO/CSVOPT`; сегменты одного запроса делят сессию
+  `XID.CID.SN.PROTO:путь` и забирают блоки по готовности; блок — записи `F` (файл), `O` (смещение), `L` (номер строки),
+  `D` (целые записи), конец — `D` нулевой длины; граница блока ищется сканером записей CSV с учётом кавычек и
+  экранирования (`X-GP-CSVOPT` = `m%1dx%3dq%3dn%1dh%1d`); заголовок пропускает сервер, по одному на файл; завершённая
+  сессия хранится 5 минут, чтобы опоздавший сегмент получил пустой ответ, а не повтор файла;
+- **запись**: POST с `X-GP-SEQ` (1 — открытие, повтор SEQ — дубликат без записи, пропуск — 400) и `X-GP-DONE`;
+  файл открывается на дозапись и закрывается, когда все сегменты прислали DONE;
+- не реализованы: zstd (сервер не подтверждает `X-GP-ZSTD`, сегменты передают без сжатия), `gpfdists`, `#transform`.
+
+`bulk/BulkLoader`: COPY через PgJDBC `CopyManager` (вызывается через отражение — драйвер в отдельном classloader),
+временные `READABLE`/`WRITABLE EXTERNAL TEMP TABLE` для gpfdist, `LOG ERRORS SEGMENT REJECT LIMIT` и подсчёт
+отклонённых строк через `gp_read_error_log()`.
+
+## Значок и Windows-ресурсы
+
+`AssembleProduct` рисует значок из одной геометрии (сетка 256×256) в SVG (`bin/opendata.svg`, брендинг в
+`opendata-branding.jar`), PNG и ICO (PNG-кадры 16–256 px, `bin/opendata.ico`). На Windows `scripts/build.ps1` загружает
+rcedit 2.0.0 (electron/rcedit, MIT; SHA-256 закреплён) и записывает в ресурсы `opendata64.exe` значок и сведения о
+версии (ProductName «OpenData IDE»). CI проверяет `VersionInfo` и сохраняет извлечённый значок как артефакт.
 
 ## Поддержка СУБД
 

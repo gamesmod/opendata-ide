@@ -168,7 +168,7 @@ class SqlInsertWriter(out: Writer, private val table: String, private val kind: 
         is Double, is Float -> if ((v as Number).toDouble().isFinite()) v.toString() else str(v.toString())
         is Number -> v.toString()
         is ByteArray -> when (kind) {
-            DbKind.POSTGRESQL, DbKind.CLOUDBERRY -> "'\\x${Values.hex(v)}'"
+            DbKind.POSTGRESQL, DbKind.GREENPLUM, DbKind.CLOUDBERRY -> "'\\x${Values.hex(v)}'"
             DbKind.CLICKHOUSE -> "unhex('${Values.hex(v)}')"
             else -> "X'${Values.hex(v)}'"
         }
@@ -209,7 +209,7 @@ object DataExporter {
      */
     fun exportQuery(connection: Connection, sql: String, file: Path, options: ExportOptions, indicator: ProgressIndicator?): Long {
         val wasAuto = connection.autoCommit
-        val cursor = options.kind == DbKind.POSTGRESQL || options.kind == DbKind.CLOUDBERRY
+        val cursor = options.kind?.isPostgresFamily == true
         if (cursor && wasAuto) connection.autoCommit = false
         try {
             connection.createStatement().use { st ->

@@ -40,7 +40,10 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
     private val database = JBTextField(config.database)
     private val user = JBTextField(config.user)
     private val password = JBPasswordField().apply { text = DataSources.getPassword(config.id).orEmpty() }
-    private val url = JBTextField(config.url).apply { emptyText.text = config.effectiveUrl() }
+    /** URL всегда показывает фактический адрес: собранный из полей или заданный вручную (с параметрами). */
+    private val url = JBTextField(config.effectiveUrl())
+    /** Идёт программное обновление полей — слушатели не должны реагировать. */
+    private var syncing = false
     private val driverJar = TextFieldWithBrowseButton().apply {
         text = config.driverJar
         addBrowseFolderListener(project, FileChooserDescriptorFactory.createSingleFileDescriptor("jar").withTitle("JAR драйвера"))
@@ -60,7 +63,8 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
         refreshDriverStatus()
         title = if (DataSourceStorage.getInstance(project).find(config.id) == null) "Новый источник данных" else "Источник данных: ${config.name}"
         kindBox.addActionListener { onKindChanged() }
-        listOf(host, port, database).forEach { it.document.addDocumentListener(simpleListener { refreshUrlHint() }) }
+        listOf(host, port, database).forEach { it.document.addDocumentListener(simpleListener { if (!syncing) fieldsChanged() }) }
+        url.document.addDocumentListener(simpleListener { if (!syncing) urlChanged() })
         init()
     }
 
@@ -76,15 +80,46 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
         if (port.text == previous.defaultPort.toString() || port.text.isBlank()) port.text = k.defaultPort.toString()
         if (database.text == previous.defaultDatabase || database.text.isBlank()) database.text = k.defaultDatabase
         config.kind = k
-        refreshUrlHint()
+        if (!syncing) fieldsChanged()
         refreshDriverStatus()
     }
 
-    private fun refreshUrlHint() {
+    private fun builtUrl(): String {
         val k = kindBox.selectedItem as DbKind
-        url.emptyText.text = io.opendata.db.drivers.DriverSettings.getInstance().buildUrl(k, host.text.trim(), port.text.trim().toIntOrNull() ?: k.defaultPort, database.text.trim())
-        url.repaint()
+        return io.opendata.db.drivers.DriverSettings.getInstance().buildUrl(k, host.text.trim(), port.text.trim().toIntOrNull() ?: k.defaultPort, database.text.trim())
     }
+
+    /** URL задан вручную, если он отличается от собранного из полей (например, содержит параметры). */
+    private val isCustomUrl: Boolean get() = url.text.trim().isNotEmpty() && url.text.trim() != builtUrl()
+
+    /** Поля → URL: пересобираем URL, если он не задан вручную с параметрами. */
+    private fun fieldsChanged() {
+        val p = io.opendata.db.model.JdbcUrls.parse(url.text)
+        if (url.text.isBlank() || p.params == null) sync { url.text = builtUrl() }
+    }
+
+    /** URL → поля: тип СУБД по префиксу, хост, порт и база из URL. */
+    private fun urlChanged() {
+        val p = io.opendata.db.model.JdbcUrls.parse(url.text)
+        sync {
+            val current = kindBox.selectedItem as DbKind
+            if (p.kind != null && !io.opendata.db.model.JdbcUrls.matches(current, url.text)) {
+                kindBox.selectedItem = p.kind
+                config.kind = p.kind
+                refreshDriverStatus()
+            }
+            p.host?.let { host.text = it }
+            p.port?.let { port.text = it.toString() }
+            p.database?.let { database.text = it }
+        }
+    }
+
+    private inline fun sync(f: () -> Unit) {
+        syncing = true
+        try { f() } finally { syncing = false }
+    }
+
+    private fun refreshUrlHint() = fieldsChanged()
 
     override fun createCenterPanel(): JComponent = panel {
         row("Тип:") { cell(kindBox) }
@@ -97,7 +132,7 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
         row("База данных:") { cell(database).align(AlignX.FILL) }
         row("Пользователь:") { cell(user).align(AlignX.FILL) }
         row("Пароль:") { cell(password).align(AlignX.FILL) }
-        row("JDBC URL:") { cell(url).align(AlignX.FILL).comment("Пусто — URL собирается из полей выше") }
+        row("JDBC URL:") { cell(url).align(AlignX.FILL).comment("Синхронизируется с полями выше; можно вставить готовый URL с параметрами") }
         row("Свойства:") { cell(properties).align(AlignX.FILL).comment("Свойства драйвера: ключ=значение через ';' (SSL и др.)") }
         row("JAR драйвера:") {
             cell(driverJar).align(AlignX.FILL).comment("Пусто — драйвер из менеджера драйверов")
@@ -122,7 +157,8 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
         target.port = port.text.trim().toIntOrNull() ?: target.kind.defaultPort
         target.database = database.text.trim()
         target.user = user.text.trim()
-        target.url = url.text.trim()
+        // URL, совпадающий с собранным из полей, не храним: при смене полей он пересоберётся сам.
+        target.url = if (isCustomUrl) url.text.trim() else ""
         target.driverJar = driverJar.text.trim()
         target.properties = properties.text.split(';').mapNotNull { p ->
             val i = p.indexOf('=')
@@ -133,6 +169,9 @@ class DataSourceDialog(private val project: Project, initial: DataSourceConfig) 
     override fun doValidate(): ValidationInfo? {
         if (port.text.trim().toIntOrNull() == null && url.text.isBlank()) return ValidationInfo("Порт должен быть числом", port)
         if (host.text.isBlank() && url.text.isBlank()) return ValidationInfo("Укажите хост или JDBC URL", host)
+        val k = kindBox.selectedItem as DbKind
+        if (url.text.isNotBlank() && !url.text.trim().startsWith("jdbc:")) return ValidationInfo("JDBC URL должен начинаться с jdbc:", url)
+        if (!io.opendata.db.model.JdbcUrls.matches(k, url.text)) return ValidationInfo("URL не подходит для типа ${k.displayName}", url)
         return null
     }
 

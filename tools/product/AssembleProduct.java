@@ -46,6 +46,7 @@ public class AssembleProduct {
         Path base = Path.of(o.get("base")), out = Path.of(o.get("out"));
         String version = o.get("version");
         new AssembleProduct().assemble(base, Path.of(o.get("plugin")), o.containsKey("drivers") ? Path.of(o.get("drivers")) : null, out, version);
+        if (o.containsKey("rcedit")) setExeIcon(Path.of(o.get("rcedit")), out, version);
         if (o.containsKey("zip")) zip(out, Path.of(o.get("zip")), "OpenData-IDE-" + version);
         System.out.println("Done: " + out.toAbsolutePath());
     }
@@ -89,7 +90,8 @@ public class AssembleProduct {
         String selector = "OpenData" + platformVersion.replaceAll("^(\\d+\\.\\d+).*", "$1");
         writeBrandingJar(out.resolve("lib/opendata-branding.jar"), version, platformBuild);
         Files.write(out.resolve("bin/" + SCRIPT + ".svg"), iconSvg(256).getBytes(StandardCharsets.UTF_8));
-        ImageIO.write(iconPng(128), "png", out.resolve("bin/" + SCRIPT + ".png").toFile());
+        ImageIO.write(iconPng(256), "png", out.resolve("bin/" + SCRIPT + ".png").toFile());
+        Files.write(out.resolve("bin/" + SCRIPT + ".ico"), iconIco());
         Files.writeString(out.resolve("build.txt"), CODE + "-" + platformBuild);
 
         // 4. product-info.json: имя, код продукта, каталоги настроек, launcher, состав плагинов.
@@ -158,7 +160,8 @@ public class AssembleProduct {
 
             OpenData IDE built on the open-source IntelliJ Platform build %s (JetBrains/intellij-community, Apache License 2.0;
             see LICENSE.txt, NOTICE.txt and license/). Bundled components: IntelliJ Platform, grid (Data Editor and Viewer),
-            JetBrains Runtime, PostgreSQL JDBC driver (BSD-2-Clause). Other JDBC drivers are downloaded on demand from Maven Central.
+            JetBrains Runtime. JDBC drivers in plugins/opendata-db/drivers: PostgreSQL JDBC (BSD-2-Clause; also used for Greenplum
+            and Apache Cloudberry), ClickHouse JDBC (Apache 2.0), Apache Arrow Flight SQL JDBC (Apache 2.0), SLF4J (MIT).
             "IntelliJ" and "JetBrains" are trademarks of JetBrains s.r.o.; OpenData IDE is not affiliated with JetBrains.
             """.formatted(version, URL, platformBuild));
     }
@@ -206,34 +209,76 @@ public class AssembleProduct {
         z.closeEntry();
     }
 
-    /** Значок: цилиндр БД — без украшательств. */
+    // Значок OpenData IDE: скруглённый квадрат с градиентом (бирюзовый → синий), белый «цилиндр» из трёх дисков
+    // с янтарной крышкой. Одна геометрия (сетка 256×256) для SVG, PNG и ICO.
+    static final String C_TOP = "#12B5A6", C_BOTTOM = "#1D4ED8", C_LID = "#FFC23D";
+    static final int[][] BANDS = {{84, 116}, {128, 160}, {172, 204}};
+
     static String iconSvg(int size) {
+        StringBuilder bands = new StringBuilder();
+        for (int[] b : BANDS)
+            bands.append("  <path d=\"M60 ").append(b[0]).append(" A68 24 0 0 0 196 ").append(b[0]).append(" V").append(b[1])
+                .append(" A68 24 0 0 1 60 ").append(b[1]).append(" Z\" fill=\"#FFFFFF\"/>\n");
         return """
-            <svg xmlns="http://www.w3.org/2000/svg" width="%1$d" height="%1$d" viewBox="0 0 32 32">
-              <rect width="32" height="32" rx="6" fill="#1F4E79"/>
-              <ellipse cx="16" cy="9" rx="9" ry="3.5" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-              <path d="M7 9v14c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5V9" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-              <path d="M7 16c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="%1$d" height="%1$d" viewBox="0 0 256 256">
+              <defs>
+                <linearGradient id="od-bg" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="%2$s"/>
+                  <stop offset="1" stop-color="%3$s"/>
+                </linearGradient>
+              </defs>
+              <rect width="256" height="256" rx="56" fill="url(#od-bg)"/>
+            %4$s  <ellipse cx="128" cy="84" rx="68" ry="24" fill="%5$s"/>
             </svg>
-            """.formatted(size);
+            """.formatted(size, C_TOP, C_BOTTOM, bands, C_LID);
     }
 
     static BufferedImage iconPng(int size) {
         BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        double k = size / 32.0;
-        g.setColor(new Color(0x1F4E79));
-        g.fillRoundRect(0, 0, size, size, (int) (12 * k), (int) (12 * k));
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+        g.scale(size / 256.0, size / 256.0);
+        g.setPaint(new java.awt.GradientPaint(0, 0, Color.decode(C_TOP), 256, 256, Color.decode(C_BOTTOM)));
+        g.fill(new java.awt.geom.RoundRectangle2D.Double(0, 0, 256, 256, 112, 112));
         g.setColor(Color.WHITE);
-        g.setStroke(new BasicStroke((float) (2 * k)));
-        g.drawOval((int) (7 * k), (int) (5.5 * k), (int) (18 * k), (int) (7 * k));
-        g.drawLine((int) (7 * k), (int) (9 * k), (int) (7 * k), (int) (23 * k));
-        g.drawLine((int) (25 * k), (int) (9 * k), (int) (25 * k), (int) (23 * k));
-        g.drawArc((int) (7 * k), (int) (12.5 * k), (int) (18 * k), (int) (7 * k), 180, 180);
-        g.drawArc((int) (7 * k), (int) (19.5 * k), (int) (18 * k), (int) (7 * k), 180, 180);
+        for (int[] b : BANDS) {
+            java.awt.geom.Path2D.Double p = new java.awt.geom.Path2D.Double();
+            p.moveTo(60, b[0]);
+            p.append(new java.awt.geom.Arc2D.Double(60, b[0] - 24, 136, 48, 180, 180, java.awt.geom.Arc2D.OPEN), true);
+            p.lineTo(196, b[1]);
+            p.append(new java.awt.geom.Arc2D.Double(60, b[1] - 24, 136, 48, 0, -180, java.awt.geom.Arc2D.OPEN), true);
+            p.closePath();
+            g.fill(p);
+        }
+        g.setColor(Color.decode(C_LID));
+        g.fill(new java.awt.geom.Ellipse2D.Double(60, 60, 136, 48));
         g.dispose();
         return img;
+    }
+
+    /** ICO с PNG-кадрами 16–256 px (Windows Vista+): для opendata64.exe (rcedit) и bin/opendata.ico. */
+    static byte[] iconIco() throws IOException {
+        int[] sizes = {16, 20, 24, 32, 40, 48, 64, 128, 256};
+        java.util.List<byte[]> frames = new java.util.ArrayList<>();
+        for (int sz : sizes) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream();
+            ImageIO.write(iconPng(sz), "png", b);
+            frames.add(b.toByteArray());
+        }
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(6 + 16 * sizes.length + frames.stream().mapToInt(f -> f.length).sum())
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        bb.putShort((short) 0).putShort((short) 1).putShort((short) sizes.length);
+        int offset = 6 + 16 * sizes.length;
+        for (int i = 0; i < sizes.length; i++) {
+            bb.put((byte) (sizes[i] >= 256 ? 0 : sizes[i])).put((byte) (sizes[i] >= 256 ? 0 : sizes[i]))
+                .put((byte) 0).put((byte) 0).putShort((short) 1).putShort((short) 32)
+                .putInt(frames.get(i).length).putInt(offset);
+            offset += frames.get(i).length;
+        }
+        frames.forEach(bb::put);
+        return bb.array();
     }
 
     static BufferedImage splash(String version, String platformBuild) {
@@ -244,17 +289,42 @@ public class AssembleProduct {
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setColor(new Color(0x1F2329));
         g.fillRect(0, 0, w, h);
-        g.drawImage(iconPng(64), 48, 48, null);
+        g.drawImage(iconPng(72), 44, 44, null);
         g.setColor(Color.WHITE);
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 40));
         g.drawString(PRODUCT, 48, 170);
         g.setColor(new Color(0xA9B1BA));
         g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
-        g.drawString("Version " + version + "  ·  PostgreSQL · Cloudberry · ClickHouse · Dremio", 48, 205);
+        g.drawString("Version " + version, 48, 205);
+        g.drawString("PostgreSQL · Greenplum · Cloudberry · ClickHouse · Dremio", 48, 230);
         g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         g.drawString("Built on the open-source IntelliJ Platform " + platformBuild + " (Apache License 2.0)", 48, h - 40);
         g.dispose();
         return img;
+    }
+
+    /**
+     * Значок и сведения о версии в ресурсах bin/opendata64.exe (Windows): rcedit (electron/rcedit, MIT).
+     * Запускается только на Windows; на других ОС шаг пропускается с предупреждением.
+     */
+    static void setExeIcon(Path rcedit, Path out, String version) throws Exception {
+        Path exe = out.resolve("bin/" + SCRIPT + "64.exe");
+        if (!Files.isRegularFile(exe)) return;
+        if (!System.getProperty("os.name").toLowerCase().contains("win")) {
+            System.err.println("WARNING: rcedit запускается только на Windows — значок opendata64.exe не изменён");
+            return;
+        }
+        Process p = new ProcessBuilder(rcedit.toString(), exe.toString(),
+            "--set-icon", out.resolve("bin/" + SCRIPT + ".ico").toString(),
+            "--set-version-string", "ProductName", PRODUCT,
+            "--set-version-string", "FileDescription", PRODUCT,
+            "--set-version-string", "CompanyName", "OpenData",
+            "--set-version-string", "LegalCopyright", "OpenData IDE on the open-source IntelliJ Platform (Apache 2.0)",
+            "--set-version-string", "InternalName", SCRIPT + "64",
+            "--set-version-string", "OriginalFilename", SCRIPT + "64.exe",
+            "--set-product-version", version).inheritIO().start();
+        if (p.waitFor() != 0) throw new IOException("rcedit завершился с кодом " + p.exitValue());
+        System.out.println("Значок и версия записаны в " + exe);
     }
 
     static void unzip(Path zip, Path dir) throws IOException {

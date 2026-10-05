@@ -33,12 +33,28 @@ object DbTestSupport {
         }, env("OPENDATA_CH_PASSWORD") ?: "")
     }
 
-    /** Cloudberry: при отсутствии отдельного стенда проверяется на PostgreSQL (совместимый протокол и каталог). */
-    fun cloudberry(project: Project): DataSourceConfig? = (env("OPENDATA_CB_URL") ?: env("OPENDATA_PG_URL"))?.let { url ->
+    /** Режим Cloudberry на PostgreSQL: протокол и каталог совместимы (проверка без отдельного стенда). */
+    fun cloudberry(project: Project): DataSourceConfig? = env("OPENDATA_PG_URL")?.let { url ->
+        register(project, DataSourceConfig().apply {
+            name = "Cloudberry compat test"; kind = DbKind.CLOUDBERRY; this.url = url
+            user = env("OPENDATA_PG_USER") ?: "opendata"
+        }, env("OPENDATA_PG_PASSWORD") ?: "opendata")
+    }
+
+    /** Настоящий кластер Apache Cloudberry (CI: woblerr/cloudberry). */
+    fun realCloudberry(project: Project): DataSourceConfig? = env("OPENDATA_CB_URL")?.let { url ->
         register(project, DataSourceConfig().apply {
             name = "Cloudberry test"; kind = DbKind.CLOUDBERRY; this.url = url
-            user = env("OPENDATA_CB_USER") ?: env("OPENDATA_PG_USER") ?: "opendata"
-        }, env("OPENDATA_CB_PASSWORD") ?: env("OPENDATA_PG_PASSWORD") ?: "opendata")
+            user = env("OPENDATA_CB_USER") ?: "gpadmin"
+        }, env("OPENDATA_CB_PASSWORD") ?: "")
+    }
+
+    /** Greenplum 6/7 (CI: andruche/greenplum). Переменные OPENDATA_GP_URL и OPENDATA_GP6_URL. */
+    fun greenplum(project: Project, env: String = "OPENDATA_GP_URL"): DataSourceConfig? = env(env)?.let { url ->
+        register(project, DataSourceConfig().apply {
+            name = "Greenplum test ($env)"; kind = DbKind.GREENPLUM; this.url = url
+            user = env("OPENDATA_GP_USER") ?: "gpadmin"
+        }, env("OPENDATA_GP_PASSWORD") ?: "")
     }
 
     fun dremio(project: Project): DataSourceConfig? = env("OPENDATA_DREMIO_URL")?.let { url ->

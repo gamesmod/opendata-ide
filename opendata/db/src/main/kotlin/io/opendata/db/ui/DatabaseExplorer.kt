@@ -118,6 +118,8 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
             addSeparator()
             add(DefaultActionGroup("Ещё", true).apply {
                 templatePresentation.icon = AllIcons.Actions.More
+                add(BulkLoadAction()); add(BulkUnloadAction()); add(GpfdistAction())
+                addSeparator()
                 add(ExportConnectionsAction()); add(ImportConnectionsAction())
                 addSeparator()
                 add(DriversAction())
@@ -129,7 +131,7 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
         setContent(ScrollPaneFactory.createScrollPane(tree))
         PopupHandler.installPopupMenu(tree, DefaultActionGroup().apply {
             add(OpenConsoleAction()); add(OpenDataAction()); add(ShowDdlAction()); addSeparator()
-            add(ExportDataAction()); add(ImportDataAction()); addSeparator()
+            add(ExportDataAction()); add(ImportDataAction()); add(BulkLoadAction()); add(BulkUnloadAction()); addSeparator()
             add(RefreshAction()); add(DisconnectAction()); addSeparator()
             add(EditDataSourceAction()); add(DuplicateDataSourceAction()); add(DeleteDataSourceAction())
         }, "OpenDataDatabaseExplorerPopup")
@@ -227,7 +229,7 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
                         val ds = dsOf(u)
                         icon = AllIcons.Nodes.DataTables
                         append(ds?.name ?: "?", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-                        ds?.let { append("  ${it.kind.displayName} · ${it.host}:${it.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
+                        ds?.let { append("  ${it.kind.displayName} · ${io.opendata.db.model.JdbcUrls.address(it)}", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                         if (ds != null && DbSessions.getInstance().isConnected(ds.id)) append("  ●", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     } else {
                         icon = iconOf(o.kind)
@@ -409,6 +411,34 @@ class DatabaseExplorer(private val project: Project) : SimpleToolWindowPanel(tru
             if (o.kind == DbObjectKind.TABLE) io.opendata.db.data.DataTransferUi.import(project, ds, o, null)
             else io.opendata.db.data.DataTransferUi.import(project, ds, null, o) { MetadataCache.getInstance().invalidate(ds.id); resetNode(treeNode) }
         }
+    }
+
+    /** Bulk-загрузка: COPY через координатор (PostgreSQL/Greenplum/Cloudberry) или gpfdist (Greenplum/Cloudberry). */
+    private inner class BulkLoadAction : ExplorerAction("Bulk-загрузка (COPY / gpfdist)…", AllIcons.Actions.Upload) {
+        override fun update(e: AnActionEvent) {
+            val n = selectedNode()
+            e.presentation.isEnabled = n?.obj?.kind == DbObjectKind.TABLE && dsOf(n)?.kind?.isPostgresFamily == true
+        }
+        override fun actionPerformed(e: AnActionEvent) {
+            val n = selectedNode() ?: return
+            io.opendata.db.bulk.BulkUi.load(project, dsOf(n) ?: return, n.obj ?: return)
+        }
+    }
+
+    /** Параллельная выгрузка таблицы Greenplum/Cloudberry через WRITABLE EXTERNAL TABLE и встроенный gpfdist. */
+    private inner class BulkUnloadAction : ExplorerAction("Bulk-выгрузка (gpfdist)…", AllIcons.Actions.Download) {
+        override fun update(e: AnActionEvent) {
+            val n = selectedNode()
+            e.presentation.isEnabled = n?.obj?.kind == DbObjectKind.TABLE && dsOf(n)?.kind?.isMpp == true
+        }
+        override fun actionPerformed(e: AnActionEvent) {
+            val n = selectedNode() ?: return
+            io.opendata.db.bulk.BulkUi.unload(project, dsOf(n) ?: return, n.obj ?: return)
+        }
+    }
+
+    private inner class GpfdistAction : ExplorerAction("gpfdist-сервер…", AllIcons.Webreferences.Server) {
+        override fun actionPerformed(e: AnActionEvent) = io.opendata.db.bulk.GpfdistServerDialog(project).show()
     }
 
     /** Подключения проекта в XML-файл (без паролей) — чтобы перенести в другой проект или передать коллеге. */

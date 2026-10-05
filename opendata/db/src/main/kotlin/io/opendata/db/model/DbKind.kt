@@ -23,6 +23,13 @@ enum class DbKind(
         supportsTransactions = true, defaultSchema = "public",
     ),
 
+    /** Greenplum 6/7 (и форки: Greengage, WarehousePG, open-gpdb): протокол PostgreSQL, драйвер PostgreSQL JDBC. */
+    GREENPLUM(
+        "Greenplum", 5432, "postgres",
+        "jdbc:postgresql://{host}:{port}/{database}",
+        "org.postgresql.Driver", DriverArtifact.POSTGRESQL,
+        supportsTransactions = true, defaultSchema = "public",
+    ),
     /** Apache Cloudberry (форк Greenplum) совместим с PostgreSQL по протоколу — используется драйвер PostgreSQL. */
     CLOUDBERRY(
         "Apache Cloudberry", 5432, "postgres",
@@ -46,7 +53,10 @@ enum class DbKind(
         supportsTransactions = false, defaultSchema = null,
     );
 
-    val isPostgresFamily: Boolean get() = this == POSTGRESQL || this == CLOUDBERRY
+    val isPostgresFamily: Boolean get() = this == POSTGRESQL || this == GREENPLUM || this == CLOUDBERRY
+
+    /** MPP на ядре PostgreSQL: распределение данных, внешние таблицы, gpfdist, COPY … LOG ERRORS. */
+    val isMpp: Boolean get() = this == GREENPLUM || this == CLOUDBERRY
 
     /**
      * Свойства драйвера по умолчанию (пользовательские имеют приоритет):
@@ -55,7 +65,7 @@ enum class DbKind(
      */
     val defaultProperties: Map<String, String>
         get() = when (this) {
-            POSTGRESQL, CLOUDBERRY -> mapOf("stringtype" to "unspecified", "ApplicationName" to "OpenData IDE")
+            POSTGRESQL, GREENPLUM, CLOUDBERRY -> mapOf("stringtype" to "unspecified", "ApplicationName" to "OpenData IDE")
             CLICKHOUSE -> mapOf("compress" to "0")
             DREMIO -> emptyMap()
         }
